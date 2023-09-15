@@ -1,15 +1,40 @@
-Source: template-repository
-Section: unknown
+Source: waylib
+Section: libdevel
 Priority: optional
-Maintainer: Tsic404 <liuheng@deepin.org>
-Build-Depends: debhelper (>= 11)
-Standards-Version: 4.1.3
-Homepage: https://github.com/deepin-community/template-repository
-#Vcs-Browser: https://salsa.debian.org/debian/deepin-community-template-repository
-#Vcs-Git: https://salsa.debian.org/debian/deepin-community-template-repository.git
+Maintainer: zkyd <zkyd@zjide.org>
+Build-Depends: debhelper (>= 9),
+ cmake,
+ pkg-config,
+ qt6-base-private-dev (>= 6.4.0),
+ qt6-base-dev-tools (>= 6.4.0),
+ qt6-declarative-private-dev (>= 6.4.0),
+ qml6-module-qtquick-templates,
+ libqwlroots-dev,
+ libwlroots-dev (>= 0.17.0),
+ libpixman-1-dev,
+ libxcb-ewmh-dev,
+ wayland-protocols
+Standards-Version: 3.9.8
 
-Package: template-repository
+Package: libwaylib
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: <insert up to 60 chars description>
- <insert long description, indented with spaces>
+Multi-Arch: same
+Description:  A wrapper for wlroots based on Qt
+ .
+ This package contains the shared libraries.
+
+Package: libwaylib-dev
+Architecture: any
+Depends: ${shlibs:Depends},
+  ${misc:Depends},
+  libwaylib (=${binary:Version}),
+  qt6-base-private-dev (>= 6.4.0),
+  qt6-base-dev-tools (>= 6.4.0),
+  qt6-declarative-private-dev (>= 6.4.0),
+  libwlroots-dev (>= 0.17.0),
+  libqwlroots-dev
+Description: A devel package for libwaylib
+ .
+ This package contains the header files and static libraries of waylib.
+
