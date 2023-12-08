@@ -9,6 +9,7 @@
 #include <qwxdgshell.h>
 #include <qwseat.h>
 #include <qwcompositor.h>
+#include <qwlayershellv1.h>
 
 #include <QDebug>
 
@@ -53,6 +54,7 @@ public:
     uint activated:1;
     uint maximized:1;
     uint minimized:1;
+    uint fullscreen:1;
 };
 
 WXdgSurfacePrivate::WXdgSurfacePrivate(WXdgSurface *qq, QWXdgSurface *hh)
@@ -90,6 +92,10 @@ void WXdgSurfacePrivate::on_configure(wlr_xdg_surface_configure *event)
         if (event->toplevel_configure->maximized != maximized) {
             maximized = event->toplevel_configure->maximized;
             Q_EMIT q->maximizeChanged();
+        }
+        if (event->toplevel_configure->fullscreen != fullscreen) {
+            fullscreen = event->toplevel_configure->fullscreen;
+            Q_EMIT q->fullscreenChanged();
         }
     }
 }
@@ -160,6 +166,9 @@ void WXdgSurfacePrivate::connect()
         });
 
         QObject::connect(toplevel, &QWXdgToplevel::parentChanged, q, &WXdgSurface::parentXdgSurfaceChanged);
+
+        QObject::connect(toplevel, &QWXdgToplevel::titleChanged, q, &WXdgSurface::titleChanged);
+        QObject::connect(toplevel, &QWXdgToplevel::appidChanged, q, &WXdgSurface::appIdChanged);
     }
 }
 
@@ -252,6 +261,12 @@ bool WXdgSurface::isMinimized() const
     return d->minimized;
 }
 
+bool WXdgSurface::isFullScreen() const
+{
+    W_DC(WXdgSurface);
+    return d->handle->topToplevel()->handle()->requested.fullscreen;
+}
+
 QRect WXdgSurface::getContentGeometry() const
 {
     W_DC(WXdgSurface);
@@ -278,6 +293,18 @@ QSize WXdgSurface::maxSize() const
     return QSize();
 }
 
+QString WXdgSurface::title() const
+{
+    W_DC(WXdgSurface);
+    return {d->handle->topToplevel()->handle()->title};
+}
+
+QString WXdgSurface::appId() const
+{
+    W_DC(WXdgSurface);
+    return {d->handle->topToplevel()->handle()->app_id};
+}
+
 WXdgSurface *WXdgSurface::parentXdgSurface() const
 {
     W_DC(WXdgSurface);
@@ -287,16 +314,36 @@ WXdgSurface *WXdgSurface::parentXdgSurface() const
         if (!parent)
             return nullptr;
         return fromHandle(QWXdgToplevel::from(parent));
+    }
+
+    return nullptr;
+}
+
+WSurface *WXdgSurface::parentSurface() const
+{
+    W_DC(WXdgSurface);
+    if (auto toplevel = d->handle->topToplevel()) {
+        auto parent = toplevel->handle()->parent;
+        if (!parent)
+            return nullptr;
+        return WSurface::fromHandle(parent->base->surface);
     } else if (auto popup = d->handle->toPopup()) {
         auto parent = popup->handle()->parent;
         if (!parent)
             return nullptr;
-        auto xdgParent = QWXdgSurface::from(QWSurface::from(parent));
-        Q_ASSERT(xdgParent);
-        return fromHandle(xdgParent);
+        return WSurface::fromHandle(parent);
     }
-
     return nullptr;
+}
+
+QPointF WXdgSurface::getPopupPosition() const
+{
+    auto *popup = handle()->toPopup();
+    Q_ASSERT(popup);
+    if (QWXdgSurface::from(popup->handle()->parent))
+        return popup->getPosition();
+    return {static_cast<qreal>(popup->handle()->current.geometry.x), 
+            static_cast<qreal>(popup->handle()->current.geometry.y)};
 }
 
 void WXdgSurface::setResizeing(bool resizeing)
@@ -330,6 +377,15 @@ void WXdgSurface::setActivate(bool on)
     W_D(WXdgSurface);
     if (auto toplevel = d->handle->topToplevel()) {
         toplevel->setActivated(on);
+    }
+}
+
+void WXdgSurface::setFullScreen(bool on)
+{
+    W_D(WXdgSurface);
+
+    if (auto toplevel = d->handle->topToplevel()) {
+        toplevel->setFullscreen(on);
     }
 }
 

@@ -32,10 +32,10 @@ Item {
                 restoreEntryValues: true
                 target: root.surface
 
-                x: outputCoordMapper.x
-                y: outputCoordMapper.y + output.topMargin
-                width: outputCoordMapper.width
-                height: outputCoordMapper.height - output.topMargin
+                x: outputCoordMapper.x + Helper.getLeftExclusiveMargin(waylandSurface)
+                y: outputCoordMapper.y + output.topMargin + Helper.getTopExclusiveMargin(waylandSurface)
+                width: outputCoordMapper.width - Helper.getLeftExclusiveMargin(waylandSurface) - Helper.getRightExclusiveMargin(waylandSurface)
+                height: outputCoordMapper.height - output.topMargin - Helper.getTopExclusiveMargin(waylandSurface) - Helper.getBottomExclusiveMargin(waylandSurface)
             }
         }
     }
@@ -136,9 +136,6 @@ Item {
     }
 
     onMappedChanged: {
-        if (pendingDestroy)
-            return
-
         // When Socket is enabled and mapped becomes false, set visible
         // after closeAnimation complete， Otherwise set visible directly.
         if (mapped) {
@@ -183,7 +180,7 @@ Item {
         }
 
         // unbind some properties
-        mapped = surface.visible
+        mapped = false
         surface.states = null
         surface.transitions = null
     }

@@ -13,6 +13,7 @@
 #include <qwkeyboard.h>
 #include <qwcursor.h>
 #include <qwcompositor.h>
+#include <qwdatadevice.h>
 
 #include <QQuickWindow>
 #include <QGuiApplication>
@@ -27,6 +28,7 @@
 extern "C" {
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_data_device.h>
+#include <wlr/types/wlr_primary_selection.h>
 #define static
 #include <wlr/types/wlr_cursor.h>
 #undef static
@@ -37,7 +39,32 @@ QW_USE_NAMESPACE
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
 Q_LOGGING_CATEGORY(qLcWlrTouch, "waylib.server.seat", QtWarningMsg)
-Q_LOGGING_CATEGORY(qLcWlrTouchEvents, "waylib.server.seat.events", QtWarningMsg)
+Q_LOGGING_CATEGORY(qLcWlrTouchEvents, "waylib.server.seat.events.touch", QtWarningMsg)
+Q_LOGGING_CATEGORY(qLcWlrDragEvents, "waylib.server.seat.events.drag", QtWarningMsg)
+
+#if QT_CONFIG(wheelevent)
+class WSeatWheelEvent : public QWheelEvent {
+public:
+    WSeatWheelEvent(wlr_axis_source_t wlr_source, double wlr_delta,
+                    const QPointF &pos, const QPointF &globalPos, QPoint pixelDelta, QPoint angleDelta,
+                    Qt::MouseButtons buttons, Qt::KeyboardModifiers modifiers, Qt::ScrollPhase phase,
+                    bool inverted, Qt::MouseEventSource source = Qt::MouseEventNotSynthesized,
+                    const QPointingDevice *device = QPointingDevice::primaryPointingDevice())
+        : QWheelEvent(pos, globalPos, pixelDelta, angleDelta, buttons, modifiers, phase, inverted, source, device)
+        , m_wlrSource(wlr_source)
+        , m_wlrDelta(wlr_delta)
+    {
+
+    }
+
+    inline wlr_axis_source_t wlrSource() const { return m_wlrSource; }
+    inline double wlrDelta() const { return m_wlrDelta; }
+
+protected:
+    wlr_axis_source_t m_wlrSource;
+    double m_wlrDelta;
+};
+#endif
 
 class WSeatPrivate : public WObjectPrivate
 {
@@ -217,7 +244,7 @@ public:
         if (!keyboardFocusSurface())
             return false;
 
-        this->handle()->setKeyboard(qobject_cast<QWKeyboard*>(device->handle()));
+        q_func()->setKeyboard(device);
         /* Send modifiers to the client. */
         this->handle()->keyboardNotifyKey(timestamp, keycode, state);
         return true;
@@ -227,7 +254,7 @@ public:
             return false;
 
         auto keyboard = qobject_cast<QWKeyboard*>(device->handle());
-        this->handle()->setKeyboard(keyboard);
+        q_func()->setKeyboard(device);
         /* Send modifiers to the client. */
         this->handle()->keyboardNotifyModifiers(&keyboard->handle()->modifiers);
         return true;
@@ -237,6 +264,9 @@ public:
     void on_destroy();
     void on_request_set_cursor(wlr_seat_pointer_request_set_cursor_event *event);
     void on_request_set_selection(wlr_seat_request_set_selection_event *event);
+    void on_request_set_primary_selection(wlr_seat_request_set_primary_selection_event *event);
+    void on_request_start_drag(wlr_seat_request_start_drag_event *event);
+    void on_start_drag(wlr_drag *drag);
 
     void on_keyboard_key(wlr_keyboard_key_event *event, WInputDevice *device);
     void on_keyboard_modifiers(WInputDevice *device);
@@ -337,6 +367,40 @@ void WSeatPrivate::on_request_set_selection(wlr_seat_request_set_selection_event
     handle()->setSelection(event->source, event->serial);
 }
 
+void WSeatPrivate::on_request_set_primary_selection(wlr_seat_request_set_primary_selection_event *event)
+{
+    wlr_seat_set_primary_selection(nativeHandle(), event->source, event->serial);
+}
+
+void WSeatPrivate::on_request_start_drag(wlr_seat_request_start_drag_event *event)
+{
+    if (handle()->validatePointerGrabSerial(QWSurface::from(event->origin), event->serial)) {
+        wlr_seat_start_pointer_drag(nativeHandle(), event->drag, event->serial);
+        return;
+    }
+
+    struct wlr_touch_point *point;
+    if (handle()->validateTouchGrabSerial(QWSurface::from(event->origin), event->serial, &point)) {
+        wlr_seat_start_touch_drag(nativeHandle(), event->drag, event->serial, point);
+        return;
+    }
+
+    qCWarning(qLcWlrDragEvents) << "Ignoring start_drag request: "
+                                << "could not validate pointer or touch serial " << event->serial;
+
+    wlr_data_source_destroy(event->drag->source);
+}
+
+void WSeatPrivate::on_start_drag(wlr_drag *drag)
+{
+    doClearPointerFocus();
+    if (drag->icon) {
+        auto *surface = QWSurface::from(drag->icon->surface);
+        auto *wsurface = new WSurface(surface, surface);
+        cursor->setDragSurface(wsurface);
+    }
+}
+
 void WSeatPrivate::on_keyboard_key(wlr_keyboard_key_event *event, WInputDevice *device)
 {
     auto keyboard = qobject_cast<QWKeyboard*>(device->handle());
@@ -375,6 +439,15 @@ void WSeatPrivate::connect()
     });
     QObject::connect(handle(), &QWSeat::requestSetSelection, q_func(), [this] (wlr_seat_request_set_selection_event *event) {
         on_request_set_selection(event);
+    });
+    QObject::connect(handle(), &QWSeat::requestSetPrimarySelection, q_func(), [this] (wlr_seat_request_set_primary_selection_event *event) {
+        on_request_set_primary_selection(event);
+    });
+    QObject::connect(handle(), &QWSeat::requestStartDrag, q_func(), [this] (wlr_seat_request_start_drag_event *event) {
+        on_request_start_drag(event);
+    });
+    QObject::connect(handle(), &QWSeat::startDrag, q_func(), [this] (wlr_drag *drag) {
+        on_start_drag(drag);
     });
 }
 
@@ -423,6 +496,7 @@ void WSeatPrivate::attachInputDevice(WInputDevice *device)
         QObject::connect(keyboard, &QWKeyboard::modifiers, q_func(), [this, device] () {
             on_keyboard_modifiers(device);
         });
+        handle()->setKeyboard(keyboard);
     }
 }
 
@@ -449,6 +523,11 @@ WSeat *WSeat::fromHandle(const QWSeat *handle)
 QWSeat *WSeat::handle() const
 {
     return d_func()->handle();
+}
+
+wlr_seat *WSeat::nativeHandle() const
+{
+    return d_func()->nativeHandle();
 }
 
 QString WSeat::name() const
@@ -595,6 +674,19 @@ bool WSeat::sendEvent(WSurface *target, QObject *shellObject, QObject *eventObje
         d->doNotifyMotion(target, eventObject, e->position(), e->timestamp());
         break;
     }
+    case QEvent::Wheel: {
+        if (auto we = dynamic_cast<WSeatWheelEvent*>(event)) {
+            Qt::Orientation orientation = we->angleDelta().x() == 0 ? Qt::Vertical : Qt::Horizontal;
+            d->doNotifyAxis(static_cast<wlr_axis_source>(we->wlrSource()),
+                        orientation,
+                        we->wlrDelta(),
+                        we->angleDelta().x()+we->angleDelta().y(), // one of them must be 0
+                        we->timestamp());
+        } else {
+            qWarning("An Wheel event was received that was not sent by wlroot and will be ignored");
+        }
+        break;
+    }
     case QEvent::KeyPress: {
         auto e = static_cast<QKeyEvent*>(event);
         d->doNotifyKey(inputDevice, e->nativeVirtualKey(), WL_KEYBOARD_KEY_STATE_PRESSED, e->timestamp());
@@ -710,6 +802,28 @@ void WSeat::clearkeyboardFocusWindow()
     d->focusWindow = nullptr;
 }
 
+WInputDevice *WSeat::keyboard() const
+{
+    W_DC(WSeat);
+    auto qwKeyboard = d->handle()->getKeyboard();
+    if (qwKeyboard) {
+        auto device = WInputDevice::fromHandle(qwKeyboard);
+        Q_ASSERT(device);
+        return device;
+    } else {
+        return nullptr;
+    }
+}
+
+void WSeat::setKeyboard(WInputDevice *newKeyboard)
+{
+    W_D(WSeat);
+    if (newKeyboard == keyboard())
+        return;
+    d->handle()->setKeyboard(qobject_cast<QWKeyboard *>(newKeyboard->handle()));
+    Q_EMIT this->keyboardChanged();
+}
+
 void WSeat::notifyMotion(WCursor *cursor, WInputDevice *device, uint32_t timestamp)
 {
     W_D(WSeat);
@@ -768,7 +882,7 @@ void WSeat::notifyAxis(WCursor *cursor, WInputDevice *device, wlr_axis_source_t 
     const QPointF local = w ? global - QPointF(w->position()) : QPointF();
 
     QPoint angleDelta = orientation == Qt::Horizontal ? QPoint(delta_discrete, 0) : QPoint(0, delta_discrete);
-    QWheelEvent e(local, global, QPoint(), angleDelta, Qt::NoButton, d->keyModifiers,
+    WSeatWheelEvent e(source, delta, local, global, QPoint(), angleDelta, Qt::NoButton, d->keyModifiers,
                   Qt::NoScrollPhase, false, Qt::MouseEventNotSynthesized, qwDevice);
     e.setTimestamp(timestamp);
 

@@ -16,6 +16,7 @@ class WToplevelSurface : public QObject
     Q_PROPERTY(bool isMaximized READ isMaximized NOTIFY maximizeChanged)
     Q_PROPERTY(bool isMinimized READ isMinimized NOTIFY minimizeChanged)
     Q_PROPERTY(WSurface* surface READ surface NOTIFY surfaceChanged)
+    Q_PROPERTY(WSurface* parentSurface READ parentSurface NOTIFY parentSurfaceChanged)
     QML_NAMED_ELEMENT(ToplevelSurface)
     QML_UNCREATABLE("Only create in C++")
 
@@ -31,6 +32,10 @@ public:
         return nullptr;
     }
 
+    virtual WSurface *parentSurface() const {
+        return nullptr;
+    }
+
     virtual bool isActivated() const {
         return false;
     }
@@ -38,6 +43,9 @@ public:
         return false;
     }
     virtual bool isMinimized() const {
+        return false;
+    }
+    virtual bool isFullScreen() const {
         return false;
     }
 
@@ -48,6 +56,13 @@ public:
     }
     virtual QSize maxSize() const {
         return QSize();
+    }
+
+    virtual int keyboardFocusPriority() const {
+        // When a high-priority surface obtains keyboard focus
+        // it prevents a low-priority surface obtaining focus.
+        // Should always be 0 except layer surface
+        return 0;
     }
 
 public Q_SLOTS:
@@ -63,6 +78,9 @@ public Q_SLOTS:
     virtual void setResizeing(bool on) {
         Q_UNUSED(on);
     }
+    virtual void setFullScreen(bool on) {
+        Q_UNUSED(on);
+    }
 
     virtual bool checkNewSize(const QSize &size) = 0;
     virtual void resize(const QSize &size) {
@@ -74,6 +92,8 @@ Q_SIGNALS:
     void maximizeChanged();
     void minimizeChanged();
     void surfaceChanged();
+    void parentSurfaceChanged();
+    void fullscreenChanged();
 
     void requestMove(WSeat *seat, quint32 serial);
     void requestResize(WSeat *seat, Qt::Edges edge, quint32 serial);

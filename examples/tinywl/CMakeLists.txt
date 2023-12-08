@@ -11,7 +11,7 @@ if(POLICY CMP0071)
 endif()
 
 set(QML_IMPORT_PATH ${CMAKE_BINARY_DIR}/src/server/ CACHE STRING "" FORCE)
-add_definitions(-DSOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+option(START_DEMO "Start demo when boot" ON)
 
 find_package(PkgConfig REQUIRED)
 pkg_search_module(PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
@@ -35,6 +35,7 @@ qt_add_qml_module(tinywl-qtquick
         ClientWindow.qml
         StackWorkspace.qml
         XdgSurface.qml
+        LayerSurface.qml
         TiledWorkspace.qml
         QmlHelper.qml
         OutputDelegate.qml
@@ -42,6 +43,15 @@ qt_add_qml_module(tinywl-qtquick
         TiledToplevelHelper.qml
         WindowDecoration.qml
         CloseAnimation.qml
+        MiniDock.qml
+        InputPopupSurface.qml
+)
+
+target_compile_definitions(tinywl-qtquick
+    PRIVATE
+    SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    $<$<BOOL:${START_DEMO}>:START_DEMO>
+    WLR_USE_UNSTABLE
 )
 
 target_link_libraries(tinywl-qtquick

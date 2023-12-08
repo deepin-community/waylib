@@ -1,3 +1,9 @@
+waylib (0.0+git20231208-0deepin) UNSTABLE; urgency=medium
+
+  * fix build with wlroots 0.17.0
+
+ -- rewine <luhongxu@deepin.org>  Fri, 24 Nov 2023 17:28:54 +0800
+
 waylib (0.0+git20231030-0deepin) UNSTABLE; urgency=medium
 
   * Initial

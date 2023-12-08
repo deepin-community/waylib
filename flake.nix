@@ -21,7 +21,7 @@
 
           waylib = pkgs.qt6Packages.callPackage ./nix {
             nix-filter = nix-filter.lib;
-            qwlroots = qwlroots.packages.${system}.qwlroots-qt6-wlroots-git;
+            qwlroots = qwlroots.packages.${system}.qwlroots-qt6;
 
             # for test
             inherit pkgs waylib;
@@ -36,11 +36,13 @@
           devShells.default = pkgs.mkShell {
             packages = with pkgs; [
               wayland-utils
+              extra-cmake-modules
+              qt6.qtwayland
+              libinput
             ];
 
             inputsFrom = [
               self.packages.${system}.default
-              qwlroots.packages.${system}.qwlroots-qt6-wlroots-git
             ];
 
             shellHook = let
@@ -53,7 +55,7 @@
               # unexpected QT_NO_DEBUG form qt-base-hook
               # https://github.com/NixOS/nixpkgs/issues/251918
               export NIX_CFLAGS_COMPILE=$(echo $NIX_CFLAGS_COMPILE | sed 's/-DQT_NO_DEBUG//')
-              export QT_LOGGING_RULES="*.debug=true;qt.*.debug=false"
+              #export QT_LOGGING_RULES="*.debug=true;qt.*.debug=false"
               #export MESA_DEBUG=1
               #export EGL_LOG_LEVEL=debug
               #export LIBGL_DEBUG=verbose
