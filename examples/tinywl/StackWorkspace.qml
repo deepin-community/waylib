@@ -11,7 +11,10 @@ Item {
 
     function getSurfaceItemFromWaylandSurface(surface) {
         let finder = function(props) {
-            if (props.waylandSurface === surface)
+            if (!props.waylandSurface)
+                return false
+            // surface is WToplevelSurface or WSurfce
+            if (props.waylandSurface === surface || props.waylandSurface.surface === surface)
                 return true
         }
 
@@ -31,6 +34,14 @@ Item {
             }
         }
 
+        let layer = QmlHelper.layerSurfaceManager.getIf(layerComponent, finder)
+        if (layer) {
+            return {
+                shell: layer,
+                item: layer.surfaceItem
+            }
+        }
+
         let xwayland = QmlHelper.xwaylandSurfaceManager.getIf(xwaylandComponent, finder)
         if (xwayland) {
             return {
@@ -42,54 +53,15 @@ Item {
         return null
     }
 
-    Item {
+    MiniDock {
+        id: dock
         anchors {
             top: parent.top
             left: parent.left
             bottom: parent.bottom
             margins: 8
         }
-
         width: 250
-
-        ListView {
-            id: dock
-
-            model: ListModel {
-                id: dockModel
-
-                function removeSurface(surface) {
-                    for (var i = 0; i < dockModel.count; i++) {
-                        if (dockModel.get(i).source === surface) {
-                            dockModel.remove(i);
-                            break;
-                        }
-                    }
-                }
-            }
-            height: Math.min(parent.height, contentHeight)
-            anchors {
-                verticalCenter: parent.verticalCenter
-                left: parent.left
-                right: parent.right
-            }
-
-            spacing: 8
-
-            delegate: ShaderEffectSource {
-                id: dockitem
-                width: 100; height: 100
-                sourceItem: source
-                smooth: true
-
-                MouseArea {
-                    anchors.fill: parent;
-                    onClicked: {
-                        dockitem.sourceItem.cancelMinimize();
-                    }
-                }
-            }
-        }
     }
 
     DynamicCreatorComponent {
@@ -106,7 +78,6 @@ Item {
         // TODO: Support server decoration
         XdgSurface {
             id: surface
-
             property var doDestroy: helper.doDestroy
             property var cancelMinimize: helper.cancelMinimize
 
@@ -133,19 +104,20 @@ Item {
             property string type
 
             property alias xdgSurface: surface
-            property var xdgParent: root.getSurfaceItemFromWaylandSurface(waylandSurface.parentXdgSurface)
+            property var parentItem: root.getSurfaceItemFromWaylandSurface(waylandSurface.parentSurface)
 
-            parent: xdgParent ? xdgParent.shell : root
-            visible: xdgParent.item.effectiveVisible && waylandSurface.surface.mapped && waylandSurface.WaylandSocket.rootSocket.enabled
+            parent: parentItem ? parentItem.shell : root
+            visible: parentItem && parentItem.item.effectiveVisible
+                    && waylandSurface.surface.mapped && waylandSurface.WaylandSocket.rootSocket.enabled
             x: {
-                if (!xdgParent)
+                if (!parentItem)
                     return surface.implicitPosition.x
-                return surface.implicitPosition.x / xdgParent.item.surfaceSizeRatio + xdgParent.item.contentItem.x
+                return surface.implicitPosition.x / parentItem.item.surfaceSizeRatio + parentItem.item.contentItem.x
             }
             y: {
-                if (!xdgParent)
+                if (!parentItem)
                     return surface.implicitPosition.y
-                return surface.implicitPosition.y / xdgParent.item.surfaceSizeRatio + xdgParent.item.contentItem.y
+                return surface.implicitPosition.y / parentItem.item.surfaceSizeRatio + parentItem.item.contentItem.y
             }
             padding: 0
             background: null
@@ -158,8 +130,23 @@ Item {
 
             onClosed: {
                 if (waylandSurface)
-                    waylandSurface.surface.unmap()
+                   waylandSurface.surface.unmap()
             }
+        }
+    }
+
+    DynamicCreatorComponent {
+        id: layerComponent
+        creator: QmlHelper.layerSurfaceManager
+        autoDestroy: false
+
+        onObjectRemoved: function (obj) {
+            obj.doDestroy()
+        }
+
+        LayerSurface {
+            id: layerSurface
+            creator: layerComponent
         }
     }
 
@@ -228,7 +215,7 @@ Item {
                 id: helper
                 surface: surface
                 waylandSurface: surface.waylandSurface
-                dockModel: dockModel
+                dockModel: dock.model
                 creator: xwaylandComponent
                 decoration: decoration
             }
@@ -240,12 +227,30 @@ Item {
                 onEnterOutput: function(output) {
                     if (surface.waylandSurface.surface)
                         surface.waylandSurface.surface.enterOutput(output);
+                    Helper.onSurfaceEnterOutput(waylandSurface, surface, output)
+                    surfaceItem.x = Helper.getLeftExclusiveMargin(waylandSurface) + 10
+                    surfaceItem.y = Helper.getTopExclusiveMargin(waylandSurface) + 10
                 }
                 onLeaveOutput: function(output) {
                     if (surface.waylandSurface.surface)
                         surface.waylandSurface.surface.leaveOutput(output);
+                    Helper.onSurfaceLeaveOutput(waylandSurface, surface, output)
                 }
             }
+        }
+    }
+
+    DynamicCreatorComponent {
+        id: inputPopupComponent
+        creator: QmlHelper.inputPopupSurfaceManager
+
+        InputPopupSurface {
+            required property InputMethodHelper inputMethodHelper
+            required property WaylandInputPopupSurface popupSurface
+
+            id: inputPopupSurface
+            surface: popupSurface
+            helper: inputMethodHelper
         }
     }
 }

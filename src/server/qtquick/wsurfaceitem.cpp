@@ -180,6 +180,7 @@ private:
         case HoverLeave: Q_FALLTHROUGH();
         case KeyPress: Q_FALLTHROUGH();
         case KeyRelease: Q_FALLTHROUGH();
+        case Wheel: Q_FALLTHROUGH();
         case TouchBegin: Q_FALLTHROUGH();
         case TouchUpdate: Q_FALLTHROUGH();
         case TouchEnd: Q_FALLTHROUGH();
@@ -426,7 +427,9 @@ WSurface *WSurfaceItem::surface() const
 void WSurfaceItem::setSurface(WSurface *surface)
 {
     Q_D(WSurfaceItem);
-    if (d->surface == surface)
+
+    // when surface is null and original surface has destroyed also need reset
+    if (surface && d->surface == surface)
         return;
 
     auto oldSurface = d->surface;

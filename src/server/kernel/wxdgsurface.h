@@ -4,6 +4,7 @@
 #pragma once
 
 #include <WSurface>
+#include <WLayerSurface>
 #include <wtoplevelsurface.h>
 
 QW_BEGIN_NAMESPACE
@@ -40,22 +41,29 @@ public:
     static WXdgSurface *fromSurface(WSurface *surface);
 
     WXdgSurface *parentXdgSurface() const;
+    WSurface *parentSurface() const override;
+    QPointF getPopupPosition() const;
 
     bool isResizeing() const;
     bool isActivated() const override;
     bool isMaximized() const override;
     bool isMinimized() const override;
+    bool isFullScreen() const override;
 
     QRect getContentGeometry() const override;
 
     QSize minSize() const override;
     QSize maxSize() const override;
 
+    QString title() const;
+    QString appId() const;
+
 public Q_SLOTS:
     void setResizeing(bool resizeing) override;
     void setMaximize(bool on) override;
     void setMinimize(bool on) override;
     void setActivate(bool on) override;
+    void setFullScreen(bool on) override;
 
     bool checkNewSize(const QSize &size) override;
     void resize(const QSize &size) override;
@@ -63,6 +71,8 @@ public Q_SLOTS:
 Q_SIGNALS:
     void parentXdgSurfaceChanged();
     void resizeingChanged();
+    void titleChanged();
+    void appIdChanged();
 };
 
 WAYLIB_SERVER_END_NAMESPACE

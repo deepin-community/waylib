@@ -22,6 +22,7 @@ QT_END_NAMESPACE
 
 typedef uint wlr_axis_source_t;
 typedef uint wlr_button_state_t;
+struct wlr_seat;
 
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
@@ -48,12 +49,15 @@ class WCursor;
 class WSeatPrivate;
 class WSeat : public WServerInterface, public WObject
 {
+    Q_OBJECT
     W_DECLARE_PRIVATE(WSeat)
+    Q_PROPERTY(WInputDevice* keyboard READ keyboard WRITE setKeyboard NOTIFY keyboardChanged FINAL)
 public:
     WSeat(const QString &name = QStringLiteral("seat0"));
 
     static WSeat *fromHandle(const QW_NAMESPACE::QWSeat *handle);
     QW_NAMESPACE::QWSeat *handle() const;
+    wlr_seat *nativeHandle() const;
 
     QString name() const;
 
@@ -80,6 +84,12 @@ public:
     void setKeyboardFocusTarget(QWindow *window);
     QWindow *focusWindow() const;
     void clearkeyboardFocusWindow();
+
+    WInputDevice *keyboard() const;
+    void setKeyboard(WInputDevice *newKeyboard);
+
+Q_SIGNALS:
+    void keyboardChanged();
 
 protected:
     friend class WOutputPrivate;

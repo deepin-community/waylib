@@ -97,8 +97,9 @@ static inline const char *qcursorShapeToType(std::underlying_type_t<WCursor::Cur
         return "cross";
     case Qt::WaitCursor:
         return "wait";
-    case Qt::IBeamCursor:
-        return "ibeam";
+    case Qt::IBeamCursor: [[fallthrough]];
+    case WCursor::Text:
+        return "text";
     case Qt::SizeAllCursor:
         return "size_all";
     case Qt::BlankCursor:
@@ -185,8 +186,6 @@ static inline const char *qcursorShapeToType(std::underlying_type_t<WCursor::Cur
         return "n-resize";
     case WCursor::AllScroll:
         return "all-scroll";
-    case WCursor::Text:
-        return "text";
     case WCursor::Pointer:
         return "pointer";
     case WCursor::Wait:
@@ -670,6 +669,30 @@ void WCursor::setCursorShape(CursorShape shape)
     W_D(WCursor);
     d->shape = shape;
     d->updateCursorImage();
+}
+
+void WCursor::setDragSurface(WSurface *surface)
+{
+    W_D(WCursor);
+    if (d->dragSurface == surface)
+        return;
+    if (d->dragSurface)
+        d->dragSurface->disconnect(this);
+
+    d->dragSurface = surface;
+    if (surface) {
+        connect(surface, &WSurface::destroyed, this, [this,d]() {
+            d->dragSurface = nullptr;
+            Q_EMIT dragSurfaceChanged();
+        });
+    }
+    Q_EMIT dragSurfaceChanged();
+}
+
+WSurface *WCursor::dragSurface() const
+{
+    W_DC(WCursor);
+    return d->dragSurface;
 }
 
 bool WCursor::attachInputDevice(WInputDevice *device)

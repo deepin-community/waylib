@@ -6,8 +6,10 @@ import QtQuick.Controls
 import Waylib.Server
 
 OutputItem {
+    id: rootOutputItem
     required property WaylandOutput waylandOutput
     property OutputViewport onscreenViewport: outputViewport
+    property Cursor waylandCursor
 
     output: waylandOutput
     devicePixelRatio: waylandOutput.scale
@@ -16,8 +18,13 @@ OutputItem {
         required property OutputCursor cursor
 
         visible: cursor.visible && !cursor.isHardwareCursor
+        width: cursor.size.width
+        height: cursor.size.height
+        OutputLayer.enabled: true
+        OutputLayer.outputs: [onscreenViewport]
 
         Image {
+            id: cursorImage
             source: cursor.imageSource
             x: -cursor.hotspot.x
             y: -cursor.hotspot.y
@@ -25,6 +32,14 @@ OutputItem {
             width: cursor.size.width
             height: cursor.size.height
             sourceClipRect: cursor.sourceRect
+        }
+
+        SurfaceItem {
+            id: dragIcon
+            z: cursorImage.z - 1
+            flags: SurfaceItem.DontCacheLastBuffer
+            visible: waylandCursor.dragSurface !== null
+            surface: waylandCursor.dragSurface
         }
     }
 
@@ -92,6 +107,7 @@ OutputItem {
             root: true
             output: waylandOutput
             devicePixelRatio: outputViewport.devicePixelRatio
+            layerFlags: OutputViewport.AlwaysAccepted
 
             TextureProxy {
                 sourceItem: outputViewport
@@ -246,5 +262,18 @@ OutputItem {
             NumberAnimation { from: 0; to: 360; duration: 5000; easing.type: Easing.InOutCubic }
             loops: Animation.Infinite
         }
+    }
+
+    function setTransform(transform) {
+        onscreenViewport.rotationOutput(transform)
+    }
+
+    function setScale(scale) {
+        onscreenViewport.setOutputScale(scale)
+    }
+
+    function setOutputPosition(x, y) {
+        rootOutputItem.x = x;
+        rootOutputItem.y = y;
     }
 }

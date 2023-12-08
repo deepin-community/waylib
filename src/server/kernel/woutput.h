@@ -13,6 +13,12 @@
 #include <QQmlEngine>
 #include <QImage>
 
+extern "C" {
+#define static
+#include <wlr/types/wlr_output.h>
+#undef static
+}
+
 QT_BEGIN_NAMESPACE
 class QScreen;
 class QQuickWindow;
@@ -67,8 +73,13 @@ public:
     QW_NAMESPACE::QWRenderer *renderer() const;
     QW_NAMESPACE::QWSwapchain *swapchain() const;
     QW_NAMESPACE::QWAllocator *allocator() const;
+    bool configureSwapchain(const QSize &size, uint32_t format,
+                            QW_NAMESPACE::QWSwapchain **swapchain,
+                            bool doTest = true);
 
     QW_NAMESPACE::QWOutput *handle() const;
+    wlr_output *nativeHandle() const;
+
     static WOutput *fromHandle(const QW_NAMESPACE::QWOutput *handle);
 
     static WOutput *fromScreen(const QScreen *screen);
@@ -90,6 +101,16 @@ public:
     void addCursor(WCursor *cursor);
     void removeCursor(WCursor *cursor);
     QList<WCursor*> cursorList() const;
+
+    Q_INVOKABLE bool setGammaLut(size_t ramp_size, uint16_t* r, uint16_t* g, uint16_t* b);
+    Q_INVOKABLE bool enable(bool enabled);
+    Q_INVOKABLE void enableAdaptiveSync(bool enabled);
+    Q_INVOKABLE void setMode(wlr_output_mode *mode);
+    Q_INVOKABLE void setCustomMode(const QSize &size, int32_t refresh);
+    Q_INVOKABLE bool test();
+    Q_INVOKABLE bool commit();
+    Q_INVOKABLE void rollback();
+
 
     bool forceSoftwareCursor() const;
     void setForceSoftwareCursor(bool on);
