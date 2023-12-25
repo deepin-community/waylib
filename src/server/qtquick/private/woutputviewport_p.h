@@ -30,6 +30,7 @@ public:
     WOutputViewportPrivate()
         : offscreen(false)
         , root(false)
+        , preserveColorContents(true)
     {
 
     }
@@ -38,9 +39,7 @@ public:
     }
 
     inline WOutputRenderWindow *outputWindow() const {
-        auto ow = qobject_cast<WOutputRenderWindow*>(window);
-        Q_ASSERT(ow);
-        return ow;
+        return static_cast<WOutputRenderWindow*>(window);
     }
 
     inline static WOutputViewportPrivate *get(WOutputViewport *viewport) {
@@ -55,14 +54,18 @@ public:
     qreal getImplicitHeight() const override;
 
     void updateImplicitSize();
+    void updateRenderBufferSource();
+    void setExtraRenderSource(QQuickItem *source);
 
     W_DECLARE_PUBLIC(WOutputViewport)
     WOutput *output = nullptr;
     qreal devicePixelRatio = 1.0;
-    WBufferRenderer *renderBuffer = nullptr;
+    WBufferRenderer *bufferRenderer = nullptr;
+    QPointer<QQuickItem> extraRenderSource;
 
     uint offscreen:1;
     uint root:1;
+    uint preserveColorContents:1;
     WOutputViewport::LayerFlags layerFlags;
 };
 

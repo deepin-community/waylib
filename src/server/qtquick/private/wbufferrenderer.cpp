@@ -127,36 +127,73 @@ public:
     explicit TextureProvider(WBufferRenderer *item)
         : item(item) {}
     ~TextureProvider() {
-
+        if (m_texture)
+            cleanTexture();
     }
 
     QSGTexture *texture() const override {
-        return dwtexture ? dwtexture->getSGTexture(item->window()) : nullptr;
+        return m_texture ? &m_texture->texture : nullptr;
     }
 
     void setBuffer(QWBuffer *buffer) {
-        qwtexture.reset();
+        Q_ASSERT(item);
 
-        if (Q_LIKELY(buffer)) {
-            qwtexture.reset(QWTexture::fromBuffer(item->output()->renderer(), buffer));
-        }
+        if (m_texture)
+            cleanTexture();
 
-        if (Q_LIKELY(qwtexture)) {
-            if (Q_LIKELY(dwtexture)) {
-                dwtexture->setHandle(qwtexture.get());
-            } else {
-                dwtexture.reset(new WTexture(qwtexture.get()));
+        Q_ASSERT(!m_texture);
+        if (buffer)
+            m_texture = new Texture(item->window(), item->output()->renderer(), buffer);
+
+        Q_EMIT textureChanged();
+    }
+
+    void cleanTexture() {
+        Q_ASSERT(item);
+
+        class TextureCleanupJob : public QRunnable
+        {
+        public:
+            TextureCleanupJob(Texture *texture)
+                : texture(texture) { }
+            void run() override {
+                delete texture;
             }
-        } else {
-            dwtexture.reset();
-        }
+            Texture *texture;
+        };
+
+        // Delay clean the textures on the next render after.
+        item->window()->scheduleRenderJob(new TextureCleanupJob(m_texture),
+                                          QQuickWindow::AfterSynchronizingStage);
+        m_texture = nullptr;
+    }
+
+    void invalidate() {
+        cleanTexture();
+        item = nullptr;
 
         Q_EMIT textureChanged();
     }
 
     WBufferRenderer *item;
-    std::unique_ptr<QWTexture> qwtexture;
-    std::unique_ptr<WTexture> dwtexture;
+
+    struct Texture {
+        Texture(QQuickWindow *window, QWRenderer *renderer, QWBuffer *buffer)
+        {
+            qwtexture = QWTexture::fromBuffer(renderer, buffer);
+            WTexture::makeTexture(qwtexture, &texture, window);
+            texture.setOwnsTexture(false);
+        }
+
+        ~Texture() {
+            delete qwtexture;
+        }
+
+        QWTexture *qwtexture;
+        QSGPlainTexture texture;
+    };
+
+    Texture *m_texture = nullptr;
 };
 
 WBufferRenderer::WBufferRenderer(QQuickItem *parent)
@@ -165,14 +202,13 @@ WBufferRenderer::WBufferRenderer(QQuickItem *parent)
     , m_forceCacheBuffer(false)
     , m_hideSource(false)
 {
-
+    m_textureProvider.reset(new TextureProvider(this));
 }
 
 WBufferRenderer::~WBufferRenderer()
 {
-    resetSource();
+    resetSources();
 
-    m_renderer->deleteLater();
     delete m_renderHelper;
     delete m_swapchain;
 }
@@ -190,26 +226,55 @@ void WBufferRenderer::setOutput(WOutput *output)
     Q_EMIT sceneGraphChanged();
 }
 
-QQuickItem *WBufferRenderer::source() const
+int WBufferRenderer::sourceCount() const
 {
-    return m_source;
+    return m_sourceList.size();
 }
 
-void WBufferRenderer::setSource(QQuickItem *s, bool hideSource)
+QList<QQuickItem*> WBufferRenderer::sourceList() const
 {
-    if (m_source == s)
+    QList<QQuickItem*> list;
+    list.reserve(m_sourceList.size());
+
+    for (const Data &i : m_sourceList)
+        list.append(i.source);
+
+    return list;
+}
+
+void WBufferRenderer::setSourceList(QList<QQuickItem*> sources, bool hideSource)
+{
+    bool changed = sources.size() != m_sourceList.size() || m_hideSource != hideSource;
+    if (!changed) {
+        for (int i = 0; i < sources.size(); ++i) {
+            if (sources.at(i) != m_sourceList.at(i).source) {
+                changed = true;
+                break;
+            }
+        }
+    }
+
+    if (!changed)
         return;
 
-    resetSource();
-    m_source = s;
+    resetSources();
+    m_sourceList.clear();
     m_hideSource = hideSource;
 
-    if (m_source) {
-        connect(m_source, &QQuickItem::destroyed, this, [this] {
-            m_source = nullptr;
-            m_rootNode = nullptr;
+    for (auto s : sources) {
+        m_sourceList.append({s, nullptr});
+
+        if (isRootItem(s))
+            continue;
+
+        connect(s, &QQuickItem::destroyed, this, [this] {
+            const int index = indexOfSource(static_cast<QQuickItem*>(sender()));
+            Q_ASSERT(index >= 0);
+            removeSource(index);
+            m_sourceList.removeAt(index);
         });
-        auto d = QQuickItemPrivate::get(m_source);
+
+        auto d = QQuickItemPrivate::get(s);
         d->refFromEffectItem(m_hideSource);
     }
 
@@ -231,6 +296,11 @@ void WBufferRenderer::setCacheBuffer(bool newCacheBuffer)
     Q_EMIT cacheBufferChanged();
 }
 
+QWBuffer *WBufferRenderer::currentBuffer() const
+{
+    return state.buffer;
+}
+
 QWBuffer *WBufferRenderer::lastBuffer() const
 {
     return m_lastBuffer;
@@ -248,7 +318,7 @@ QWDamageRing *WBufferRenderer::damageRing()
 
 bool WBufferRenderer::isTextureProvider() const
 {
-    return m_cacheBuffer;
+    return true;
 }
 
 QSGTextureProvider *WBufferRenderer::textureProvider() const
@@ -256,47 +326,13 @@ QSGTextureProvider *WBufferRenderer::textureProvider() const
     return m_textureProvider.get();
 }
 
-QWBuffer *WBufferRenderer::render(QSGRenderContext *context, uint32_t format,
-                                  const QSize &pixelSize, qreal devicePixelRatio,
-                                  QMatrix4x4 renderMatrix, RenderFlags flags)
+QWBuffer *WBufferRenderer::beginRender(const QSize &pixelSize, qreal devicePixelRatio,
+                                       uint32_t format, RenderFlags flags)
 {
-    m_lastBuffer.clear();
+    Q_ASSERT(!state.buffer);
     Q_ASSERT(m_output);
 
-    auto dr = qobject_cast<QSGDefaultRenderContext*>(context);
-    auto wd = QQuickWindowPrivate::get(window());
-    QSGRenderer *renderer = nullptr;
-
-    if (m_source) {
-        if (!m_renderer) {
-            m_rootNode = getRootNode(m_source);
-            Q_ASSERT(m_rootNode);
-
-            const bool useDepth = dr ? dr->useDepthBufferFor2D() : false;
-            const auto renderMode = useDepth ? QSGRendererInterface::RenderMode2D
-                                             : QSGRendererInterface::RenderMode2DNoDepthBuffer;
-            m_renderer = context->createRenderer(renderMode);
-            m_renderer->setRootNode(m_rootNode);
-            QObject::connect(m_renderer, &QSGRenderer::sceneGraphChanged,
-                             this, &WBufferRenderer::sceneGraphChanged);
-        }
-
-        m_renderer->setClearColor(Qt::transparent);
-        renderer = m_renderer;
-    } else {
-        renderer = wd->renderer;
-    }
-
     m_damageRing.setBounds(pixelSize);
-
-    renderer->setDevicePixelRatio(devicePixelRatio);
-    renderer->setDeviceRect(QRect(QPoint(0, 0), pixelSize));
-    renderer->setViewportRect(pixelSize);
-
-    if (!m_renderHelper)
-        m_renderHelper = new WRenderHelper(m_output->renderer());
-    m_renderHelper->setSize(pixelSize);
-
     // configure swapchain
     if (flags.testFlag(RenderFlag::DontConfigureSwapchain)) {
         auto renderFormat = pickFormat(m_output->renderer(), format);
@@ -311,10 +347,13 @@ QWBuffer *WBufferRenderer::render(QSGRenderContext *context, uint32_t format,
             m_swapchain = QWSwapchain::create(m_output->allocator(), pixelSize, renderFormat);
         }
     } else {
-        bool ok = m_output->configureSwapchain(pixelSize, format, &m_swapchain, flags);
+        bool ok = m_output->configureSwapchain(pixelSize, format, &m_swapchain, !flags.testFlag(DontTestSwapchain));
         if (!ok)
             return nullptr;
     }
+
+    if (!shouldCacheBuffer())
+        m_textureProvider->setBuffer(nullptr);
 
     // TODO: Support scanout buffer of wlr_surface(from WSurfaceItem)
     int bufferAge;
@@ -322,6 +361,11 @@ QWBuffer *WBufferRenderer::render(QSGRenderContext *context, uint32_t format,
     if (!buffer)
         return nullptr;
 
+    if (!m_renderHelper)
+        m_renderHelper = new WRenderHelper(m_output->renderer());
+    m_renderHelper->setSize(pixelSize);
+
+    auto wd = QQuickWindowPrivate::get(window());
     Q_ASSERT(wd->renderControl);
     auto lastRT = m_renderHelper->lastRenderTarget();
     auto rt = m_renderHelper->acquireRenderTarget(wd->renderControl, buffer);
@@ -341,18 +385,60 @@ QWBuffer *WBufferRenderer::render(QSGRenderContext *context, uint32_t format,
         sgRT.cb = wd->redirect.commandBuffer;
         Q_ASSERT(sgRT.cb);
         sgRT.rpDesc = rtd->u.rhiRt->renderPassDescriptor();
+
+#ifndef QT_NO_OPENGL
+        if (wd->rhi->backend() == QRhi::OpenGLES2) {
+            auto glRT = QRHI_RES(QGles2TextureRenderTarget, rtd->u.rhiRt);
+            Q_ASSERT(glRT->framebuffer > 0);
+            auto glContext = QOpenGLContext::currentContext();
+            Q_ASSERT(glContext);
+            QOpenGLContextPrivate::get(glContext)->defaultFboRedirect = glRT->framebuffer;
+        }
+#endif
     }
-    renderer->setRenderTarget(sgRT);
+
+    state.flags = flags;
+    state.context = wd->context;
+    state.pixelSize = pixelSize;
+    state.devicePixelRatio = devicePixelRatio;
+    state.bufferAge = bufferAge;
+    state.lastRT = lastRT;
+    state.buffer = buffer;
+    state.renderTarget = rt;
+    state.sgRenderTarget = sgRT;
+
+    if (!shouldCacheBuffer())
+        m_textureProvider->setBuffer(buffer);
+
+    return buffer;
+}
+
+void WBufferRenderer::render(int sourceIndex, QMatrix4x4 renderMatrix, bool preserveColorContents)
+{
+    Q_ASSERT(state.buffer);
+
+    const auto &source = m_sourceList.at(sourceIndex);
+    QSGRenderer *renderer = ensureRenderer(source.source, state.context);
+    auto wd = QQuickWindowPrivate::get(window());
+
+    renderer->setDevicePixelRatio(state.devicePixelRatio);
+    renderer->setDeviceRect(QRect(QPoint(0, 0), state.pixelSize));
+    renderer->setViewportRect(state.pixelSize);
+    renderer->setRenderTarget(state.sgRenderTarget);
 
     auto softwareRenderer = dynamic_cast<QSGSoftwareRenderer*>(renderer);
     { // before render
         if (softwareRenderer) {
-            auto image = getImageFrom(rt);
-            image->setDevicePixelRatio(devicePixelRatio);
+            auto image = getImageFrom(state.renderTarget);
+            image->setDevicePixelRatio(state.devicePixelRatio);
 
             // TODO: Should set to QSGSoftwareRenderer, but it's not support specify matrix.
             // If transform is changed, it will full repaint.
-            if (m_source) {
+            if (isRootItem(source.source)) {
+                auto rootTransform = QQuickItemPrivate::get(wd->contentItem)->itemNode();
+                if (rootTransform->matrix() != renderMatrix)
+                    rootTransform->setMatrix(renderMatrix);
+            } else {
                 auto t = renderMatrix.toTransform();
                 if (t.type() > QTransform::TxTranslate) {
                     (image->operator QImage &()).fill(renderer->clearColor());
@@ -360,17 +446,13 @@ QWBuffer *WBufferRenderer::render(QSGRenderContext *context, uint32_t format,
                 }
 
                 applyTransform(softwareRenderer, t);
-            } else {
-                auto rootTransform = QQuickItemPrivate::get(wd->contentItem)->itemNode();
-                if (rootTransform->matrix() != renderMatrix)
-                    rootTransform->setMatrix(renderMatrix);
             }
         } else {
             bool flipY = wd->rhi ? !wd->rhi->isYUpInNDC() : false;
-            if (!rt.isNull() && rt.mirrorVertically())
+            if (state.renderTarget.mirrorVertically())
                 flipY = !flipY;
 
-            QRectF rect(QPointF(0, 0), QSizeF(pixelSize) / devicePixelRatio);
+            QRectF rect(QPointF(0, 0), QSizeF(state.pixelSize) / state.devicePixelRatio);
 
             const float left = rect.x();
             const float right = rect.x() + rect.width();
@@ -397,37 +479,26 @@ QWBuffer *WBufferRenderer::render(QSGRenderContext *context, uint32_t format,
             renderer->setProjectionMatrix(projectionMatrix);
             renderer->setProjectionMatrixWithNativeNDC(projectionMatrixWithNativeNDC);
 
-#ifndef QT_NO_OPENGL
-            if (!m_source && wd->rhi->backend() == QRhi::OpenGLES2) {
-                auto glRT = QRHI_RES(QGles2TextureRenderTarget, rtd->u.rhiRt);
-                Q_ASSERT(glRT->framebuffer > 0);
-                auto glContext = QOpenGLContext::currentContext();
-                Q_ASSERT(glContext);
-                QOpenGLContextPrivate::get(glContext)->defaultFboRedirect = glRT->framebuffer;
+            auto textureRT = static_cast<QRhiTextureRenderTarget*>(state.sgRenderTarget.rt);
+            if (preserveColorContents) {
+                textureRT->setFlags(textureRT->flags() | QRhiTextureRenderTarget::PreserveColorContents);
+            } else {
+                textureRT->setFlags(textureRT->flags() & ~QRhiTextureRenderTarget::PreserveColorContents);
             }
-#endif
         }
     }
 
-    context->renderNextFrame(renderer);
+    state.context->renderNextFrame(renderer);
 
     { // after render
         if (!softwareRenderer) {
             // TODO: get damage area from QRhi renderer
             m_damageRing.addWhole();
-
-#ifndef QT_NO_OPENGL
-            if (!m_source && wd->rhi->backend() == QRhi::OpenGLES2) {
-                auto glContext = QOpenGLContext::currentContext();
-                Q_ASSERT(glContext);
-                QOpenGLContextPrivate::get(glContext)->defaultFboRedirect = GL_NONE;
-            }
-#endif
         } else {
-            auto currentImage = getImageFrom(rt);
+            auto currentImage = getImageFrom(state.renderTarget);
             Q_ASSERT(currentImage && currentImage == softwareRenderer->m_rt.paintDevice);
             currentImage->setDevicePixelRatio(1.0);
-            const auto scaleTF = QTransform::fromScale(devicePixelRatio, devicePixelRatio);
+            const auto scaleTF = QTransform::fromScale(state.devicePixelRatio, state.devicePixelRatio);
             const auto scaledFlushRegion = scaleTF.map(softwareRenderer->flushRegion());
             PixmanRegion scaledFlushDamage;
             bool ok = WTools::toPixmanRegion(scaledFlushRegion, scaledFlushDamage);
@@ -435,12 +506,12 @@ QWBuffer *WBufferRenderer::render(QSGRenderContext *context, uint32_t format,
 
             {
                 PixmanRegion damage;
-                m_damageRing.getBufferDamage(bufferAge, damage);
+                m_damageRing.getBufferDamage(state.bufferAge, damage);
 
-                if (!damage.isEmpty() && lastRT.first != buffer && !lastRT.second.isNull()) {
-                    auto image = getImageFrom(lastRT.second);
+                if (!damage.isEmpty() && state.lastRT.first != state.buffer && !state.lastRT.second.isNull()) {
+                    auto image = getImageFrom(state.lastRT.second);
                     Q_ASSERT(image);
-                    Q_ASSERT(image->size() == pixelSize);
+                    Q_ASSERT(image->size() == state.pixelSize);
 
                     // TODO: Don't use the previous render target, we can get the damage region of QtQuick
                     // before QQuickRenderControl::render for QWDamageRing, and add dirty region to
@@ -460,29 +531,40 @@ QWBuffer *WBufferRenderer::render(QSGRenderContext *context, uint32_t format,
                 }
             }
 
-            if (m_source)
+            if (!isRootItem(source.source))
                 applyTransform(softwareRenderer, renderMatrix.inverted().toTransform());
             m_damageRing.add(scaledFlushDamage);
         }
     }
 
-    if (flags.testFlag(UpdateResource) && dr) {
+    if (auto dr = qobject_cast<QSGDefaultRenderContext*>(state.context)) {
         QRhiResourceUpdateBatch *resourceUpdates = wd->rhi->nextResourceUpdateBatch();
         dr->currentFrameCommandBuffer()->resourceUpdate(resourceUpdates);
     }
+}
 
-    if (m_textureProvider.get())
+void WBufferRenderer::endRender()
+{
+    Q_ASSERT(state.buffer);
+    auto buffer = state.buffer;
+    state.buffer = nullptr;
+    if (shouldCacheBuffer())
         m_textureProvider->setBuffer(buffer);
 
     m_lastBuffer = buffer;
-
-    return buffer;
-}
-
-void WBufferRenderer::setBufferSubmitted(QWLRoots::QWBuffer *buffer)
-{
     m_damageRing.rotate();
     m_swapchain->setBufferSubmitted(buffer);
+    buffer->unlock();
+
+#ifndef QT_NO_OPENGL
+    auto wd = QQuickWindowPrivate::get(window());
+    if (state.flags.testFlag(RedirectOpenGLContextDefaultFrameBufferObject)
+        && wd->rhi && wd->rhi->backend() == QRhi::OpenGLES2) {
+        auto glContext = QOpenGLContext::currentContext();
+        Q_ASSERT(glContext);
+        QOpenGLContextPrivate::get(glContext)->defaultFboRedirect = GL_NONE;
+    }
+#endif
 }
 
 void WBufferRenderer::componentComplete()
@@ -490,40 +572,31 @@ void WBufferRenderer::componentComplete()
     QQuickItem::componentComplete();
 }
 
-void WBufferRenderer::ensureTextureProvider()
+void WBufferRenderer::setForceCacheBuffer(bool force)
 {
-    m_forceCacheBuffer = true;
+    if (m_forceCacheBuffer == force)
+        return;
+    m_forceCacheBuffer = force;
     updateTextureProvider();
 }
 
 void WBufferRenderer::resetTextureProvider()
 {
-    m_forceCacheBuffer = false;
-    updateTextureProvider();
+    if (m_textureProvider)
+        m_textureProvider->setBuffer(nullptr);
 }
 
 void WBufferRenderer::updateTextureProvider()
 {
     if (shouldCacheBuffer()) {
-        if (!m_textureProvider.get())
-            m_textureProvider.reset(new TextureProvider(this));
-        if (m_lastBuffer)
-            m_textureProvider->setBuffer(m_lastBuffer);
-    } else if (m_textureProvider.get()) {
-        m_textureProvider.reset();
+        m_textureProvider->setBuffer(m_lastBuffer);
+    } else {
+        m_textureProvider->setBuffer(nullptr);
     }
-
-    if (flags().testFlag(ItemHasContents))
-        update();
 }
 
 QSGNode *WBufferRenderer::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 {
-    if (!m_textureProvider.get()) {
-        delete oldNode;
-        return nullptr;
-    }
-
     auto node = static_cast<QSGImageNode*>(oldNode);
     if (Q_UNLIKELY(!node)) {
         node = window()->createImageNode();
@@ -562,20 +635,73 @@ void WBufferRenderer::releaseResources()
             QObject *m_object;
         };
 
+        m_textureProvider->invalidate();
         // Delay clean the textures on the next render after.
         window()->scheduleRenderJob(new TextureProviderCleanupJob(m_textureProvider.release()),
                                     QQuickWindow::AfterRenderingStage);
     }
 }
 
-void WBufferRenderer::resetSource()
+void WBufferRenderer::resetSources()
 {
-    if (m_source) {
-        auto d = QQuickItemPrivate::get(m_source);
-        d->derefFromEffectItem(m_hideSource);
-        m_source = nullptr;
+    for (int i = 0; i < m_sourceList.size(); ++i) {
+        removeSource(i);
     }
-    m_rootNode = nullptr;
+}
+
+void WBufferRenderer::removeSource(int index)
+{
+    auto s = m_sourceList.at(index);
+    if (isRootItem(s.source))
+        return;
+
+    s.renderer->deleteLater();
+    auto d = QQuickItemPrivate::get(s.source);
+    if (d->inDestructor)
+        return;
+
+    s.source->disconnect(this);
+    d->derefFromEffectItem(m_hideSource);
+}
+
+int WBufferRenderer::indexOfSource(QQuickItem *s)
+{
+    for (int i = 0; i < m_sourceList.size(); ++i) {
+        if (m_sourceList.at(i).source == s) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+QSGRenderer *WBufferRenderer::ensureRenderer(QQuickItem *source, QSGRenderContext *rc)
+{
+    if (isRootItem(source))
+        return QQuickWindowPrivate::get(window())->renderer;
+
+    const int index = indexOfSource(source);
+    Q_ASSERT(index >= 0);
+    Data &d = m_sourceList[index];
+
+    if (Q_LIKELY(d.renderer))
+        return d.renderer;
+
+    auto rootNode = getRootNode(source);
+    Q_ASSERT(rootNode);
+
+    auto dr = qobject_cast<QSGDefaultRenderContext*>(rc);
+    const bool useDepth = dr ? dr->useDepthBufferFor2D() : false;
+    const auto renderMode = useDepth ? QSGRendererInterface::RenderMode2D
+                                     : QSGRendererInterface::RenderMode2DNoDepthBuffer;
+    d.renderer = rc->createRenderer(renderMode);
+    d.renderer->setRootNode(rootNode);
+    QObject::connect(d.renderer, &QSGRenderer::sceneGraphChanged,
+                     this, &WBufferRenderer::sceneGraphChanged);
+
+    d.renderer->setClearColor(Qt::transparent);
+
+    return d.renderer;
 }
 
 WAYLIB_SERVER_END_NAMESPACE

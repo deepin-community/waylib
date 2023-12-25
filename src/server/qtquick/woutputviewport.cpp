@@ -15,12 +15,12 @@ WAYLIB_SERVER_BEGIN_NAMESPACE
 
 void WOutputViewportPrivate::init()
 {
-    Q_ASSERT(!renderBuffer);
+    Q_ASSERT(!bufferRenderer);
     Q_Q(WOutputViewport);
 
-    renderBuffer = new WBufferRenderer(q);
-    QQuickItemPrivate::get(renderBuffer)->anchors()->setFill(q);
-    QObject::connect(renderBuffer, &WBufferRenderer::cacheBufferChanged,
+    bufferRenderer = new WBufferRenderer(q);
+    QQuickItemPrivate::get(bufferRenderer)->anchors()->setFill(q);
+    QObject::connect(bufferRenderer, &WBufferRenderer::cacheBufferChanged,
                      q, &WOutputViewport::cacheBufferChanged);
 }
 
@@ -28,12 +28,8 @@ void WOutputViewportPrivate::initForOutput()
 {
     W_Q(WOutputViewport);
 
-    if (root) {
-        renderBuffer->setSource(q, true);
-    } else {
-        renderBuffer->setSource(nullptr, true);
-    }
-    renderBuffer->setOutput(output);
+    updateRenderBufferSource();
+    bufferRenderer->setOutput(output);
     outputWindow()->attach(q);
 
     QObject::connect(output, &WOutput::modeChanged, q, [this] {
@@ -63,6 +59,32 @@ void WOutputViewportPrivate::updateImplicitSize()
     q->resetHeight();
 }
 
+void WOutputViewportPrivate::updateRenderBufferSource()
+{
+    W_Q(WOutputViewport);
+
+    QList<QQuickItem*> sources;
+
+    if (root) {
+        sources.append(q);
+    } else {
+        sources.append(nullptr);
+    }
+
+    if (extraRenderSource)
+        sources.append(extraRenderSource);
+
+    bufferRenderer->setSourceList(sources, true);
+}
+
+void WOutputViewportPrivate::setExtraRenderSource(QQuickItem *source)
+{
+    if (extraRenderSource == source)
+        return;
+    extraRenderSource = source;
+    updateRenderBufferSource();
+}
+
 WOutputViewport::WOutputViewport(QQuickItem *parent)
     : QQuickItem(*new WOutputViewportPrivate(), parent)
 {
@@ -89,7 +111,7 @@ bool WOutputViewport::isTextureProvider() const
     if (QQuickItem::isTextureProvider())
         return true;
 
-    return d->renderBuffer->isTextureProvider();
+    return d->bufferRenderer->isTextureProvider();
 }
 
 QSGTextureProvider *WOutputViewport::textureProvider() const
@@ -98,7 +120,7 @@ QSGTextureProvider *WOutputViewport::textureProvider() const
     if (auto tp = QQuickItem::textureProvider())
         return tp;
 
-    return d->renderBuffer->textureProvider();
+    return d->bufferRenderer->textureProvider();
 }
 
 WOutput *WOutputViewport::output() const
@@ -175,11 +197,7 @@ void WOutputViewport::setRoot(bool newRoot)
     d->root = newRoot;
 
     if (d->output) {
-        if (newRoot) {
-            d->renderBuffer->setSource(this, true);
-        } else if (d->output) {
-            d->renderBuffer->setSource(nullptr, true);
-        }
+        d->updateRenderBufferSource();
     }
 
     Q_EMIT rootChanged();
@@ -188,13 +206,28 @@ void WOutputViewport::setRoot(bool newRoot)
 bool WOutputViewport::cacheBuffer() const
 {
     W_DC(WOutputViewport);
-    return d->renderBuffer->cacheBuffer();
+    return d->bufferRenderer->cacheBuffer();
 }
 
 void WOutputViewport::setCacheBuffer(bool newCacheBuffer)
 {
     W_D(WOutputViewport);
-    d->renderBuffer->setCacheBuffer(newCacheBuffer);
+    d->bufferRenderer->setCacheBuffer(newCacheBuffer);
+}
+
+bool WOutputViewport::preserveColorContents() const
+{
+    W_DC(WOutputViewport);
+    return d->preserveColorContents;;
+}
+
+void WOutputViewport::setPreserveColorContents(bool newPreserveColorContents)
+{
+    W_D(WOutputViewport);
+    if (d->preserveColorContents == newPreserveColorContents)
+        return;
+    d->preserveColorContents = newPreserveColorContents;
+    Q_EMIT preserveColorContentsChanged();
 }
 
 WOutputViewport::LayerFlags WOutputViewport::layerFlags() const
@@ -234,6 +267,23 @@ void WOutputViewport::componentComplete()
         d->initForOutput();
 
     QQuickItem::componentComplete();
+}
+
+void WOutputViewport::releaseResources()
+{
+    invalidate();
+    QQuickItem::releaseResources();
+}
+
+void WOutputViewport::itemChange(ItemChange change, const ItemChangeData &data)
+{
+    QQuickItem::itemChange(change, data);
+
+    if (change == ItemSceneChange && data.window) {
+        if (!qobject_cast<WOutputRenderWindow*>(data.window)) {
+            qFatal() << "OutputViewport must using in OutputRenderWindow.";
+        }
+    }
 }
 
 WAYLIB_SERVER_END_NAMESPACE

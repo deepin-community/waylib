@@ -22,7 +22,8 @@ Item {
         if (toplevel) {
             return {
                 shell: toplevel,
-                item: toplevel
+                item: toplevel,
+                type: "toplevel"
             }
         }
 
@@ -30,7 +31,8 @@ Item {
         if (popup) {
             return {
                 shell: popup,
-                item: popup.xdgSurface
+                item: popup.xdgSurface,
+                type: "popup"
             }
         }
 
@@ -38,7 +40,8 @@ Item {
         if (layer) {
             return {
                 shell: layer,
-                item: layer.surfaceItem
+                item: layer.surfaceItem,
+                type: "layer"
             }
         }
 
@@ -46,7 +49,8 @@ Item {
         if (xwayland) {
             return {
                 shell: xwayland,
-                item: xwayland
+                item: xwayland,
+                type: "xwayland"
             }
         }
 
@@ -77,14 +81,41 @@ Item {
 
         // TODO: Support server decoration
         XdgSurface {
-            id: surface
+            id: toplevelSurfaceItem
             property var doDestroy: helper.doDestroy
             property var cancelMinimize: helper.cancelMinimize
+            property int outputCounter: 0
+
+            OutputLayoutItem {
+                anchors.fill: parent
+                layout: QmlHelper.layout
+
+                onEnterOutput: function(output) {
+                    waylandSurface.surface.enterOutput(output)
+                    Helper.onSurfaceEnterOutput(waylandSurface, toplevelSurfaceItem, output)
+                    outputCounter++
+
+                    if (outputCounter == 1) {
+                        let outputDelegate = output.OutputItem.item
+                        toplevelSurfaceItem.x = outputDelegate.x
+                                + Helper.getLeftExclusiveMargin(waylandSurface)
+                                + 10
+                        toplevelSurfaceItem.y = outputDelegate.y
+                                + Helper.getTopExclusiveMargin(waylandSurface)
+                                + 10
+                    }
+                }
+                onLeaveOutput: function(output) {
+                    waylandSurface.surface.leaveOutput(output)
+                    Helper.onSurfaceLeaveOutput(waylandSurface, toplevelSurfaceItem, output)
+                    outputCounter--
+                }
+            }
 
             StackToplevelHelper {
                 id: helper
-                surface: surface
-                waylandSurface: surface.waylandSurface
+                surface: toplevelSurfaceItem
+                waylandSurface: toplevelSurfaceItem.waylandSurface
                 dockModel: dock.model
                 creator: toplevelComponent
             }
@@ -103,29 +134,77 @@ Item {
             required property WaylandXdgSurface waylandSurface
             property string type
 
-            property alias xdgSurface: surface
+            property alias xdgSurface: popupSurfaceItem
             property var parentItem: root.getSurfaceItemFromWaylandSurface(waylandSurface.parentSurface)
 
-            parent: parentItem ? parentItem.shell : root
+            parent: parentItem ? parentItem.item : root
             visible: parentItem && parentItem.item.effectiveVisible
                     && waylandSurface.surface.mapped && waylandSurface.WaylandSocket.rootSocket.enabled
             x: {
-                if (!parentItem)
-                    return surface.implicitPosition.x
-                return surface.implicitPosition.x / parentItem.item.surfaceSizeRatio + parentItem.item.contentItem.x
+                let retX = 0 // X coordinate relative to parent
+                let minX = 0
+                let maxX = root.width - xdgSurface.width
+                if (!parentItem) {
+                    retX = popupSurfaceItem.implicitPosition.x
+                    if (retX > maxX)
+                        retX = maxX
+                    if (retX < minX)
+                        retX = minX
+                } else {
+                    retX = popupSurfaceItem.implicitPosition.x / parentItem.item.surfaceSizeRatio + parentItem.item.contentItem.x
+                    let parentX = parent.mapToItem(root, 0, 0).x
+                    if (retX + parentX > maxX) {
+                        if (parentItem.type === "popup")
+                            retX = retX - xdgSurface.width - parent.width
+                        else
+                            retX = maxX - parentX
+                    }
+                    if (retX + parentX < minX)
+                        retX = minX - parentX
+                }
+                return retX
             }
             y: {
-                if (!parentItem)
-                    return surface.implicitPosition.y
-                return surface.implicitPosition.y / parentItem.item.surfaceSizeRatio + parentItem.item.contentItem.y
+                let retY = 0 // Y coordinate relative to parent
+                let minY = 0
+                let maxY = root.height - xdgSurface.height
+                if (!parentItem) {
+                    retY = popupSurfaceItem.implicitPosition.y
+                    if (retY > maxY)
+                        retY = maxY
+                    if (retY < minY)
+                        retY = minY
+                } else {
+                    retY = popupSurfaceItem.implicitPosition.y / parentItem.item.surfaceSizeRatio + parentItem.item.contentItem.y
+                    let parentY = parent.mapToItem(root, 0, 0).y
+                    if (retY + parentY > maxY)
+                        retY = maxY - parentY
+                    if (retY + parentY < minY)
+                        retY = minY - parentY
+                }
+                return retY
             }
             padding: 0
             background: null
             closePolicy: Popup.CloseOnPressOutside
 
             XdgSurface {
-                id: surface
+                id: popupSurfaceItem
                 waylandSurface: popup.waylandSurface
+
+                OutputLayoutItem {
+                    anchors.fill: parent
+                    layout: QmlHelper.layout
+
+                    onEnterOutput: function(output) {
+                        waylandSurface.surface.enterOutput(output)
+                        Helper.onSurfaceEnterOutput(waylandSurface, popupSurfaceItem, output)
+                    }
+                    onLeaveOutput: function(output) {
+                        waylandSurface.surface.leaveOutput(output)
+                        Helper.onSurfaceLeaveOutput(waylandSurface, popupSurfaceItem, output)
+                    }
+                }
             }
 
             onClosed: {
@@ -160,21 +239,22 @@ Item {
         }
 
         XWaylandSurfaceItem {
-            id: surface
+            id: xwaylandSurfaceItem
 
             required property XWaylandSurface waylandSurface
             property var doDestroy: helper.doDestroy
             property var cancelMinimize: helper.cancelMinimize
             property var surfaceParent: root.getSurfaceItemFromWaylandSurface(waylandSurface.parentXWaylandSurface)
+            property int outputCounter: 0
 
             surface: waylandSurface
             parentSurfaceItem: surfaceParent ? surfaceParent.item : null
             z: waylandSurface.bypassManager ? 1 : 0 // TODO: make to enum type
             positionMode: {
-                if (!surface.effectiveVisible)
+                if (!xwaylandSurfaceItem.effectiveVisible)
                     return XWaylandSurfaceItem.ManualPosition
 
-                return (Helper.movingItem === surface || resizeMode === SurfaceItem.SizeToSurface)
+                return (Helper.movingItem === xwaylandSurfaceItem || resizeMode === SurfaceItem.SizeToSurface)
                         ? XWaylandSurfaceItem.PositionToSurface
                         : XWaylandSurfaceItem.PositionFromSurface
             }
@@ -194,8 +274,8 @@ Item {
             }
 
             onEffectiveVisibleChanged: {
-                if (surface.effectiveVisible)
-                    surface.move(XWaylandSurfaceItem.PositionToSurface)
+                if (xwaylandSurfaceItem.effectiveVisible)
+                    xwaylandSurfaceItem.move(XWaylandSurfaceItem.PositionToSurface)
             }
 
             // TODO: ensure the event to WindowDecoration before WSurfaceItem::eventItem on surface's edges
@@ -207,17 +287,8 @@ Item {
                                       && waylandSurface.decorationsType !== XWaylandSurface.DecorationsNoBorder
 
                 anchors.fill: parent
-                z: surface.contentItem.z - 1
+                z: xwaylandSurfaceItem.contentItem.z - 1
                 visible: enable
-            }
-
-            StackToplevelHelper {
-                id: helper
-                surface: surface
-                waylandSurface: surface.waylandSurface
-                dockModel: dock.model
-                creator: xwaylandComponent
-                decoration: decoration
             }
 
             OutputLayoutItem {
@@ -225,17 +296,37 @@ Item {
                 layout: QmlHelper.layout
 
                 onEnterOutput: function(output) {
-                    if (surface.waylandSurface.surface)
-                        surface.waylandSurface.surface.enterOutput(output);
-                    Helper.onSurfaceEnterOutput(waylandSurface, surface, output)
-                    surfaceItem.x = Helper.getLeftExclusiveMargin(waylandSurface) + 10
-                    surfaceItem.y = Helper.getTopExclusiveMargin(waylandSurface) + 10
+                    if (xwaylandSurfaceItem.waylandSurface.surface)
+                        xwaylandSurfaceItem.waylandSurface.surface.enterOutput(output);
+                    Helper.onSurfaceEnterOutput(waylandSurface, xwaylandSurfaceItem, output)
+
+                    outputCounter++
+
+                    if (outputCounter == 1) {
+                        let outputDelegate = output.OutputItem.item
+                        xwaylandSurfaceItem.x = outputDelegate.x
+                                + Helper.getLeftExclusiveMargin(waylandSurface)
+                                + 10
+                        xwaylandSurfaceItem.y = outputDelegate.y
+                                + Helper.getTopExclusiveMargin(waylandSurface)
+                                + 10
+                    }
                 }
                 onLeaveOutput: function(output) {
-                    if (surface.waylandSurface.surface)
-                        surface.waylandSurface.surface.leaveOutput(output);
-                    Helper.onSurfaceLeaveOutput(waylandSurface, surface, output)
+                    if (xwaylandSurfaceItem.waylandSurface.surface)
+                        xwaylandSurfaceItem.waylandSurface.surface.leaveOutput(output);
+                    Helper.onSurfaceLeaveOutput(waylandSurface, xwaylandSurfaceItem, output)
+                    outputCounter--
                 }
+            }
+
+            StackToplevelHelper {
+                id: helper
+                surface: xwaylandSurfaceItem
+                waylandSurface: xwaylandSurfaceItem.waylandSurface
+                dockModel: dock.model
+                creator: xwaylandComponent
+                decoration: decoration
             }
         }
     }
