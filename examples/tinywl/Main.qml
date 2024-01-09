@@ -17,13 +17,15 @@ Item {
             id: backend
 
             onOutputAdded: function(output) {
-                output.forceSoftwareCursor = true // Test
+                if (!backend.hasDrm)
+                    output.forceSoftwareCursor = true // Test
 
                 Helper.allowNonDrmOutputAutoChangeMode(output)
                 QmlHelper.outputManager.add({waylandOutput: output})
                 outputManagerV1.newOutput(output)
             }
             onOutputRemoved: function(output) {
+                output.OutputItem.item.invalidate()
                 QmlHelper.outputManager.removeIf(function(prop) {
                     return prop.waylandOutput === output
                 })
@@ -95,24 +97,26 @@ Item {
             id: outputManagerV1
 
             onRequestTestOrApply: function(config, onlyTest) {
-                var states = outputManagerV1.stateListPending();
-                var ok = true;
+                var states = outputManagerV1.stateListPending()
+                var ok = true
+
                 for (const i in states) {
-                    let output = states[i].output;
-                    output.enable(states[i].enabled);
+                    let output = states[i].output
+                    output.enable(states[i].enabled)
                     if (states[i].enabled) {
                         if (states[i].mode)
-                            output.setMode(states[i].mode);
+                            output.setMode(states[i].mode)
                         else
                             output.setCustomMode(states[i].custom_mode_size,
-                                                  states[i].custom_mode_refresh);
+                                                  states[i].custom_mode_refresh)
 
-                        output.enableAdaptiveSync(states[i].adaptive_sync_enabled);
+                        output.enableAdaptiveSync(states[i].adaptive_sync_enabled)
                         if (!onlyTest) {
                             let outputDelegate = output.OutputItem.item
                             outputDelegate.setTransform(states[i].transform)
                             outputDelegate.setScale(states[i].scale)
-                            outputDelegate.setOutputPosition(states[i].x, states[i].y)
+                            outputDelegate.x = states[i].x
+                            outputDelegate.y = states[i].y
                         }
                     }
 
@@ -121,9 +125,23 @@ Item {
                         output.rollback()
                     } else {
                         ok &= output.commit()
+                        if (ok)
+                            updateRenderWindowSize()
                     }
                 }
                 outputManagerV1.sendResult(config, ok)
+            }
+
+            function updateRenderWindowSize() {
+                var states = outputManagerV1.stateListPending()
+                var maxX = 0, maxY = 0
+                for (const i in states) {
+                    let outputDelegate = states[i].output.OutputItem.item
+                    maxX = Math.max(maxX, outputDelegate.x + outputDelegate.width)
+                    maxY = Math.max(maxY, outputDelegate.y + outputDelegate.height)
+                }
+                outputLayout.xRange = maxX
+                outputLayout.yRange = maxY
             }
         }
 
@@ -201,16 +219,18 @@ Item {
         id: renderWindow
 
         compositor: compositor
-        width: outputRowLayout.implicitWidth + outputRowLayout.x
-        height: outputRowLayout.implicitHeight + outputRowLayout.y
+        width: outputLayout.xRange + outputLayout.x
+        height: outputLayout.yRange + outputLayout.y
 
         EventJunkman {
             anchors.fill: parent
         }
 
-        Row {
-            // TODO: Row may break output position setting of OutputManager
-            id: outputRowLayout
+        Item {
+            id: outputLayout
+
+            property int xRange: 0
+            property int yRange: 0
 
             DynamicCreatorComponent {
                 id: outputDelegateCreator
@@ -219,6 +239,16 @@ Item {
                 OutputDelegate {
                     property real topMargin: topbar.height
                     waylandCursor: cursor1
+
+                    Component.onCompleted: {
+                        x = outputLayout.xRange
+                        y = 0
+                        outputLayout.xRange += width
+                        if (outputLayout.yRange < height)
+                            outputLayout.yRange = height
+                    }
+
+
                 }
             }
         }
