@@ -12,6 +12,8 @@
 QT_BEGIN_NAMESPACE
 class QQuickItem;
 class QPainter;
+class QSGRootNode;
+class QSGNode;
 QT_END_NAMESPACE
 
 WAYLIB_SERVER_BEGIN_NAMESPACE
@@ -69,6 +71,12 @@ public:
     explicit WQmlHelper(QObject *parent = nullptr);
 
     bool hasXWayland() const;
+
+    static QSGRootNode *getRootNode(QQuickItem *item);
+    static int &QSGNode_subtreeRenderableCount(QSGNode *node);
+    static QSGNode* &QSGNode_firstChild(QSGNode *node);
+    static QSGNode* &QSGNode_lastChild(QSGNode *node);
+    static QSGNode* &QSGNode_parent(QSGNode *node);
 
 public Q_SLOTS:
     void itemStackToTop(QQuickItem *item);

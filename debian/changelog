@@ -1,3 +1,9 @@
+waylib (0.0+git20240116-0deepin1) UNSTABLE; urgency=medium
+
+  * Sync upstream code.
+
+ -- rewine <luhongxu@deepin.org>  Tue, 16 Jan 2024 17:39:38 +0800
+
 waylib (0.0+git20231225-0deepin) UNSTABLE; urgency=medium
 
   * sync upstream code
