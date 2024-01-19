@@ -3,8 +3,13 @@
 
 #include "wqmlhelper_p.h"
 
+#define private public
+#include <QSGNode>
+#undef private
+
 #include <QQuickItem>
 #include <QCursor>
+#include <private/qquickitem_p.h>
 
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
@@ -100,6 +105,38 @@ Qt::Edges WQmlHelper::getEdges(const QRectF &rect, const QPointF &pos, qreal edg
         return Qt::TopEdge;
 
     return Qt::BottomEdge;
+}
+
+QSGRootNode *WQmlHelper::getRootNode(QQuickItem *item)
+{
+    const auto d = QQuickItemPrivate::get(item);
+    QSGNode *root = d->itemNode();
+    if (!root)
+        return nullptr;
+
+    while (root->firstChild() && root->type() != QSGNode::RootNodeType)
+        root = root->firstChild();
+    return root->type() == QSGNode::RootNodeType ? static_cast<QSGRootNode*>(root) : nullptr;
+}
+
+int &WQmlHelper::QSGNode_subtreeRenderableCount(QSGNode *node)
+{
+    return node->m_subtreeRenderableCount;
+}
+
+QSGNode *&WQmlHelper::QSGNode_firstChild(QSGNode *node)
+{
+    return node->m_firstChild;
+}
+
+QSGNode *&WQmlHelper::QSGNode_lastChild(QSGNode *node)
+{
+    return node->m_lastChild;
+}
+
+QSGNode *&WQmlHelper::QSGNode_parent(QSGNode *node)
+{
+    return node->m_parent;
 }
 
 WAYLIB_SERVER_END_NAMESPACE

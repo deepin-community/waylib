@@ -119,6 +119,34 @@ Item {
                 dockModel: dock.model
                 creator: toplevelComponent
             }
+
+            states: [
+                State {
+                    name: "maximize"
+                    when: helper.isMaximize
+                    PropertyChanges {
+                        restoreEntryValues: true
+                        target: toplevelSurfaceItem
+                        x: helper.getMaximizeX()
+                        y: helper.getMaximizeY()
+                        width: helper.getMaximizeWidth()
+                        height: helper.getMaximizeHeight()
+                    }
+                },
+                State {
+                    name: "fullscreen"
+                    when: helper.isFullScreen
+                    PropertyChanges {
+                        restoreEntryValues: true
+                        target: toplevelSurfaceItem
+                        x: helper.getFullscreenX()
+                        y: helper.getFullscreenY()
+                        z: 100 + 1 // LayerType.Overlay + 1
+                        width: helper.getFullscreenWidth()
+                        height: helper.getFullscreenHeight()
+                    }
+                }
+            ]
         }
     }
 
@@ -186,7 +214,7 @@ Item {
             }
             padding: 0
             background: null
-            closePolicy: Popup.CloseOnPressOutside
+            closePolicy: Popup.NoAutoClose
 
             XdgSurface {
                 id: popupSurfaceItem
@@ -205,11 +233,6 @@ Item {
                         Helper.onSurfaceLeaveOutput(waylandSurface, popupSurfaceItem, output)
                     }
                 }
-            }
-
-            onClosed: {
-                if (waylandSurface)
-                   waylandSurface.surface.unmap()
             }
         }
     }
@@ -328,6 +351,41 @@ Item {
                 creator: xwaylandComponent
                 decoration: decoration
             }
+
+            states: [
+                State {
+                    name: "maximize"
+                    when: helper.isMaximize
+                    PropertyChanges {
+                        restoreEntryValues: true
+                        target: xwaylandSurfaceItem
+                        x: helper.getMaximizeX()
+                        y: helper.getMaximizeY()
+                        width: helper.getMaximizeWidth()
+                        height: helper.getMaximizeHeight()
+                        positionMode: XWaylandSurfaceItem.PositionToSurface
+                    }
+                },
+                State {
+                    name: "fullscreen"
+                    when: helper.isFullScreen
+                    PropertyChanges {
+                        restoreEntryValues: true
+                        target: xwaylandSurfaceItem
+                        x: helper.getFullscreenX()
+                        y: helper.getFullscreenY()
+                        z: 100 + 1 // LayerType.Overlay + 1
+                        width: helper.getFullscreenWidth()
+                        height: helper.getFullscreenHeight()
+                        positionMode: XWaylandSurfaceItem.PositionToSurface
+                    }
+                    PropertyChanges {
+                        restoreEntryValues: true
+                        target: decoration
+                        enable: false
+                    }
+                }
+            ]
         }
     }
 

@@ -178,9 +178,7 @@ public:
     inline WOutputRenderWindow *renderWindow() const {
         return static_cast<WOutputRenderWindow*>(parent());
     }
-    inline QQuickWindowPrivate *renderWindowD() const {
-        return QQuickWindowPrivate::get(renderWindow());
-    }
+    inline WOutputRenderWindowPrivate *renderWindowD() const;
 
     inline WOutputViewport *output() const {
         return m_output;
@@ -203,6 +201,10 @@ public:
         m_output = nullptr;
     }
 
+    inline qreal devicePixelRatio() const {
+        return m_output->devicePixelRatio();
+    }
+
     void updateSceneDPR();
 
     int indexOfLayer(OutputLayer *layer) const;
@@ -211,6 +213,11 @@ public:
     void sortLayers();
     void cleanLayerCompositor();
 
+    inline QWBuffer *beginRender(WBufferRenderer *renderer,
+                                 const QSize &pixelSize, uint32_t format,
+                                 WBufferRenderer::RenderFlags flags);
+    inline void render(WBufferRenderer *renderer, int sourceIndex,
+                       const QMatrix4x4 &renderMatrix, bool preserveColorContents);
     void beforeRender();
     WBufferRenderer *afterRender();
     WBufferRenderer *compositeLayers(const QVector<LayerData*> layers);
@@ -336,10 +343,16 @@ public:
 
     QVector<std::pair<OutputHelper *, WBufferRenderer *> > doRenderOutputs();
     void doRender();
+    inline void pushRenderer(WBufferRenderer *renderer) {
+        rendererList.push(renderer);
+    }
 
     inline void scheduleDoRender() {
         if (!isInitialized())
             return; // Not initialized
+
+        if (inRendering)
+            return;
 
         QCoreApplication::postEvent(q_func(), new QEvent(doRenderEventType));
     }
@@ -349,6 +362,7 @@ public:
     Q_DECLARE_PUBLIC(WOutputRenderWindow)
 
     bool componentCompleted = true;
+    bool inRendering = false;
     WWaylandCompositor *compositor = nullptr;
 
     QList<OutputHelper*> outputs;
@@ -358,7 +372,14 @@ public:
 #ifdef ENABLE_VULKAN_RENDER
     QScopedPointer<QVulkanInstance> vkInstance;
 #endif
+
+    QStack<WBufferRenderer*> rendererList;
 };
+
+WOutputRenderWindowPrivate *OutputHelper::renderWindowD() const
+{
+    return WOutputRenderWindowPrivate::get(renderWindow());
+}
 
 void OutputHelper::updateSceneDPR()
 {
@@ -443,12 +464,29 @@ void OutputHelper::cleanLayerCompositor()
     }
 }
 
+QWBuffer *OutputHelper::beginRender(WBufferRenderer *renderer,
+                                    const QSize &pixelSize, uint32_t format,
+                                    WBufferRenderer::RenderFlags flags)
+{
+    return renderer->beginRender(pixelSize, devicePixelRatio(), format, flags);
+}
+
+void OutputHelper::render(WBufferRenderer *renderer, int sourceIndex,
+                          const QMatrix4x4 &renderMatrix, bool preserveColorContents)
+{
+    renderWindowD()->pushRenderer(renderer);
+    renderer->render(sourceIndex, renderMatrix, preserveColorContents);
+}
+
 void OutputHelper::beforeRender()
 {
     const auto layersFlags = output()->layerFlags();
     if (layersFlags.testFlag(WOutputViewport::LayerFlag::AlwaysRejected)) {
         for (auto i : m_layers)
             i->layer->layer->setAccepted(false);
+    } else if (layersFlags.testFlag(WOutputViewport::LayerFlag::AlwaysAccepted)) {
+        for (auto i : m_layers)
+            i->layer->layer->setAccepted(true);
     }
 }
 
@@ -475,15 +513,12 @@ WBufferRenderer *OutputHelper::afterRender()
     layers.reserve(m_layers.size());
     datas.reserve(m_layers.size());
 
-    const bool alwaysAccepted = layersFlags.testFlag(WOutputViewport::LayerFlag::AlwaysAccepted);
-    const bool canRejected = !alwaysAccepted;
-
     for (auto i : m_layers) {
         if (!i->layer->layer->parent()->isVisible())
             continue;
 
-        // TODO: Don't continue if the render format is changed
-        if (!i->layer->layer->isAccepted() && canRejected)
+        // TODO: Should continue if the render format is changed
+        if (!i->layer->layer->isAccepted())
             continue;
 
         auto source = i->layer->layer->parent();
@@ -502,7 +537,7 @@ WBufferRenderer *OutputHelper::afterRender()
         const auto viewportD = QQuickItemPrivate::get(output());
         QRectF mapRect = QRectF(QPointF(0, 0), source->size());
         const QMatrix4x4 mapMatrix = sourceD->itemToWindowTransform() * viewportD->windowToItemTransform();
-        const qreal dpr = output()->devicePixelRatio();
+        const qreal dpr = devicePixelRatio();
         mapRect = mapMatrix.mapRect(mapRect);
         mapRect.moveTo(mapRect.topLeft() * dpr);
 
@@ -557,13 +592,14 @@ WBufferRenderer *OutputHelper::afterRender()
         if (!buffer || i->contentsIsDirty || needsFullUpdate) {
             const QSize pixelSize(qCeil(i->mapRect.width()), qCeil(i->mapRect.height()));
             const bool alpha = !i->layer->layer->flags().testFlag(WOutputLayer::NoAlpha);
-            buffer = i->renderer->beginRender(pixelSize, dpr,
-                                              // TODO: Allows control format by WOutputLayer
-                                              alpha ? DRM_FORMAT_ARGB8888 : DRM_FORMAT_XRGB8888,
-                                              WBufferRenderer::DontConfigureSwapchain);
-            if (buffer)
-                i->renderer->render(0, renderMatrix,
-                                    i->layer->layer->flags().testFlag(WOutputLayer::PreserveColorContents));
+            buffer = beginRender(i->renderer, pixelSize,
+                                 // TODO: Allows control format by WOutputLayer
+                                 alpha ? DRM_FORMAT_ARGB8888 : DRM_FORMAT_XRGB8888,
+                                 WBufferRenderer::DontConfigureSwapchain);
+            if (buffer) {
+                render(i->renderer, 0, renderMatrix,
+                       i->layer->layer->flags().testFlag(WOutputLayer::PreserveColorContents));
+            }
         } else {
             isNewBuffer = false;
         }
@@ -571,10 +607,8 @@ WBufferRenderer *OutputHelper::afterRender()
         i->contentsIsDirty = false;
         i->renderMatrix = renderMatrix;
 
-        if (!buffer) {
-            i->layer->layer->setAccepted(false);
+        if (!buffer)
             continue;
-        }
 
         layers.append({
             .layer = i->wlrLayer->handle(),
@@ -634,7 +668,7 @@ WBufferRenderer *OutputHelper::afterRender()
         needsCompositeLayers = datas;
     }
 
-    if (!alwaysAccepted) {
+    if (!layersFlags.testFlag(WOutputViewport::LayerFlag::AlwaysAccepted)) {
         for (auto i : needsCompositeLayers)
             i->layer->layer->setAccepted(false);
         return bufferRenderer();
@@ -662,7 +696,6 @@ WBufferRenderer *OutputHelper::compositeLayers(const QList<LayerData*> layers)
     }
 
     WOutputViewport *output;
-    const qreal dpr = m_output->devicePixelRatio();
 
     if (usingShadowRenderer) {
         if (!m_output2) {
@@ -673,7 +706,7 @@ WBufferRenderer *OutputHelper::compositeLayers(const QList<LayerData*> layers)
         }
 
         m_output2->setSize(m_output->size());
-        m_output2->setDevicePixelRatio(dpr);
+        m_output2->setDevicePixelRatio(m_output->devicePixelRatio());
         output = m_output2;
 
         if (m_layerProxys.size() <= layers.size())
@@ -696,6 +729,7 @@ WBufferRenderer *OutputHelper::compositeLayers(const QList<LayerData*> layers)
     }
 
     m_layerPorxyContainer->setSize(output->size());
+    const qreal dpr = devicePixelRatio();
 
     for (int i = 0; i < layers.count(); ++i) {
         const int j = i + (usingShadowRenderer ? 1 : 0);
@@ -726,18 +760,18 @@ WBufferRenderer *OutputHelper::compositeLayers(const QList<LayerData*> layers)
     renderWindow()->renderControl()->sync();
 
     if (usingShadowRenderer) {
-        const bool ok = bufferRenderer2()->beginRender(m_output->output()->size(), dpr,
-                                                       qwoutput()->handle()->render_format,
-                                                       WBufferRenderer::RedirectOpenGLContextDefaultFrameBufferObject);
+        const bool ok = beginRender(bufferRenderer2(), m_output->output()->size(),
+                                    qwoutput()->handle()->render_format,
+                                    WBufferRenderer::RedirectOpenGLContextDefaultFrameBufferObject);
 
         if (ok) {
             bufferRenderer()->endRender();
-            bufferRenderer2()->render(0, {}, true);
+            render(bufferRenderer2(), 0, {}, true);
 
             return bufferRenderer2();
         }
     } else {
-        bufferRenderer()->render(1, {}, true);
+        render(bufferRenderer(), 1, {}, true);
     }
 
     return bufferRenderer();
@@ -949,8 +983,7 @@ QVector<std::pair<OutputHelper*, WBufferRenderer*>> WOutputRenderWindowPrivate::
             continue;
         }
 
-        const qreal dpr = helper->output()->devicePixelRatio();
-        Q_ASSERT(helper->output()->output()->scale() <= dpr);
+        Q_ASSERT(helper->output()->output()->scale() <= helper->output()->devicePixelRatio());
 
         const auto &format = helper->qwoutput()->handle()->render_format;
         QMatrix4x4 renderMatrix;
@@ -982,11 +1015,12 @@ QVector<std::pair<OutputHelper*, WBufferRenderer*>> WOutputRenderWindowPrivate::
             renderMatrix = viewportMatrix * parentMatrix;
         }
 
-        QWBuffer *buffer = helper->bufferRenderer()->beginRender(helper->output()->output()->size(),
-                                                                 dpr, format,
-                                                                 WBufferRenderer::RedirectOpenGLContextDefaultFrameBufferObject);
+        QWBuffer *buffer = helper->beginRender(helper->bufferRenderer(), helper->output()->output()->size(), format,
+                                               WBufferRenderer::RedirectOpenGLContextDefaultFrameBufferObject);
         Q_ASSERT(buffer == helper->bufferRenderer()->currentBuffer());
-        helper->bufferRenderer()->render(0, renderMatrix, helper->output()->preserveColorContents());
+        if (buffer) {
+            helper->render(helper->bufferRenderer(), 0, renderMatrix, helper->output()->preserveColorContents());
+        }
         renderResults.append(helper);
     }
 
@@ -997,6 +1031,8 @@ QVector<std::pair<OutputHelper*, WBufferRenderer*>> WOutputRenderWindowPrivate::
         if (bufferRenderer)
             needsCommit.append({helper, bufferRenderer});
     }
+
+    rendererList.clear();
 
     return needsCommit;
 }
@@ -1021,40 +1057,29 @@ static void QQuickAnimatorController_advance(QQuickAnimatorController *ac)
 
 void WOutputRenderWindowPrivate::doRender()
 {
-    bool hasDirtyOutput = false;
-    for (OutputHelper *helper : outputs) {
-        helper->beforeRender();
-
-        if (helper->renderable() && helper->output()->isVisible() && helper->contentIsDirty())
-            hasDirtyOutput = true;
-    }
-
-    if (!hasDirtyOutput)
-        return;
+    Q_ASSERT(rendererList.isEmpty());
+    Q_ASSERT(!inRendering);
+    inRendering = true;
 
     rc()->polishItems();
-    const bool isRhi = QSGRendererInterface::isApiRhiBased(WRenderHelper::getGraphicsApi());
-
-    if (isRhi) {
+    if (QSGRendererInterface::isApiRhiBased(WRenderHelper::getGraphicsApi()))
         rc()->beginFrame();
-    }
-
     rc()->sync();
 
-    Q_Q(WOutputRenderWindow);
-
     QQuickAnimatorController_advance(animationController.get());
-    emit q->beforeRendering();
+    Q_EMIT q_func()->beforeRendering();
     runAndClearJobs(&beforeRenderingJobs);
+
+    for (OutputHelper *helper : outputs)
+        helper->beforeRender();
 
     auto needsCommit = doRenderOutputs();
 
-    emit q->afterRendering();
+    Q_EMIT q_func()->afterRendering();
     runAndClearJobs(&afterRenderingJobs);
 
-    if (isRhi) {
+    if (QSGRendererInterface::isApiRhiBased(WRenderHelper::getGraphicsApi()))
         rc()->endFrame();
-    }
 
     for (auto i : needsCommit) {
         bool ok = i.first->commit(i.second);
@@ -1067,6 +1092,7 @@ void WOutputRenderWindowPrivate::doRender()
     }
 
     resetGlState();
+    inRendering = false;
 }
 
 // TODO: Support QWindow::setCursor
@@ -1077,6 +1103,9 @@ WOutputRenderWindow::WOutputRenderWindow(QObject *parent)
 
     if (parent)
         QObject::setParent(parent);
+
+    connect(contentItem(), &QQuickItem::widthChanged, this, &WOutputRenderWindow::widthChanged);
+    connect(contentItem(), &QQuickItem::heightChanged, this, &WOutputRenderWindow::heightChanged);
 }
 
 WOutputRenderWindow::~WOutputRenderWindow()
@@ -1180,16 +1209,20 @@ void WOutputRenderWindow::setOutputScale(WOutputViewport *output, float scale)
 {
     Q_D(WOutputRenderWindow);
 
-    if (auto helper = d->getOutputHelper(output))
+    if (auto helper = d->getOutputHelper(output)) {
         helper->setScale(scale);
+        update();
+    }
 }
 
 void WOutputRenderWindow::rotateOutput(WOutputViewport *output, WOutput::Transform t)
 {
     Q_D(WOutputRenderWindow);
 
-    if (auto helper = d->getOutputHelper(output))
+    if (auto helper = d->getOutputHelper(output)) {
         helper->setTransform(t);
+        update();
+    }
 }
 
 WWaylandCompositor *WOutputRenderWindow::compositor() const
@@ -1220,6 +1253,12 @@ void WOutputRenderWindow::setCompositor(WWaylandCompositor *newCompositor)
     }
 }
 
+WBufferRenderer *WOutputRenderWindow::currentRenderer() const
+{
+    Q_D(const WOutputRenderWindow);
+    return d->rendererList.isEmpty() ? nullptr : d->rendererList.top();
+}
+
 void WOutputRenderWindow::render()
 {
     Q_D(WOutputRenderWindow);
@@ -1238,6 +1277,28 @@ void WOutputRenderWindow::update()
     for (auto o : d->outputs)
         o->update(); // make contents to dirty
     d->scheduleDoRender();
+}
+
+qreal WOutputRenderWindow::width() const
+{
+    return contentItem()->width();
+}
+
+qreal WOutputRenderWindow::height() const
+{
+    return contentItem()->height();
+}
+
+void WOutputRenderWindow::setWidth(qreal arg)
+{
+    QQuickWindow::setWidth(arg);
+    contentItem()->setWidth(arg);
+}
+
+void WOutputRenderWindow::setHeight(qreal arg)
+{
+    QQuickWindow::setHeight(arg);
+    contentItem()->setHeight(arg);
 }
 
 void WOutputRenderWindow::classBegin()
