@@ -17,7 +17,7 @@ OutputItem {
     cursorDelegate: Item {
         required property OutputCursor cursor
 
-        visible: cursor.visible && !cursor.isHardwareCursor
+        visible: cursor.visible
         width: cursor.size.width
         height: cursor.size.height
         OutputLayer.enabled: true
@@ -25,6 +25,7 @@ OutputItem {
 
         Image {
             id: cursorImage
+            visible: !cursor.isHardwareCursor
             source: cursor.imageSource
             x: -cursor.hotspot.x
             y: -cursor.hotspot.y
@@ -49,7 +50,6 @@ OutputItem {
         output: waylandOutput
         devicePixelRatio: parent.devicePixelRatio
         anchors.centerIn: parent
-        preserveColorContents: !rotationAnimator.running
 
         RotationAnimation {
             id: rotationAnimator
@@ -105,14 +105,15 @@ OutputItem {
         OutputViewport {
             readonly property OutputItem outputItem: waylandOutput.OutputItem.item
 
+            id: viewport
             root: true
             output: waylandOutput
             devicePixelRatio: outputViewport.devicePixelRatio
             layerFlags: OutputViewport.AlwaysAccepted
-            preserveColorContents: !rotationAnimator.running
 
             TextureProxy {
                 sourceItem: outputViewport
+                anchors.fill: parent
             }
 
             Item {
@@ -142,6 +143,8 @@ OutputItem {
                             smooth: false
                             scale: 10
                             transformOrigin: Item.TopLeft
+                            width: viewport.width
+                            height: viewport.height
 
                             function updatePosition() {
                                 const pos = outputItem.lastActiveCursorItem.mapToItem(outputViewport, Qt.point(0, 0))
@@ -274,8 +277,7 @@ OutputItem {
         onscreenViewport.setOutputScale(scale)
     }
 
-    function setOutputPosition(x, y) {
-        rootOutputItem.x = x;
-        rootOutputItem.y = y;
+    function invalidate() {
+        onscreenViewport.invalidate()
     }
 }

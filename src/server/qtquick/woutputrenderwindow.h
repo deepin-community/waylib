@@ -18,12 +18,15 @@ WAYLIB_SERVER_BEGIN_NAMESPACE
 class WWaylandCompositor;
 class WOutputViewport;
 class WOutputLayer;
+class WBufferRenderer;
 class WOutputRenderWindowPrivate;
 class WAYLIB_SERVER_EXPORT WOutputRenderWindow : public QQuickWindow, public QQmlParserStatus
 {
     Q_OBJECT
     Q_DECLARE_PRIVATE(WOutputRenderWindow)
     Q_PROPERTY(WWaylandCompositor *compositor READ compositor WRITE setCompositor REQUIRED)
+    Q_PROPERTY(qreal width READ width WRITE setWidth NOTIFY widthChanged)
+    Q_PROPERTY(qreal height READ height WRITE setHeight NOTIFY heightChanged)
     QML_NAMED_ELEMENT(OutputRenderWindow)
     Q_INTERFACES(QQmlParserStatus)
 
@@ -45,10 +48,20 @@ public:
     WWaylandCompositor *compositor() const;
     void setCompositor(WWaylandCompositor *newRenderer);
 
+    qreal width() const;
+    qreal height() const;
+    WBufferRenderer *currentRenderer() const;
+
 public Q_SLOTS:
     void render();
     void scheduleRender();
     void update();
+    void setWidth(qreal arg);
+    void setHeight(qreal arg);
+
+Q_SIGNALS:
+    void widthChanged();
+    void heightChanged();
 
 private:
     void classBegin() override;

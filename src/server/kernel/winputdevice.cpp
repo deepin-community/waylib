@@ -8,6 +8,7 @@
 
 #include <QDebug>
 #include <QInputDevice>
+#include <QPointer>
 
 extern "C" {
 #include <wlr/types/wlr_input_device.h>
@@ -40,7 +41,7 @@ public:
     W_DECLARE_PUBLIC(WInputDevice);
 
     QWInputDevice *handle = nullptr;
-    QInputDevice *qtDevice = nullptr;
+    QPointer<QInputDevice> qtDevice;
     WSeat *seat = nullptr;
 };
 
