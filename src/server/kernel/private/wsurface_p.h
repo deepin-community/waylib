@@ -34,6 +34,7 @@ public:
 
     void init();
     void connect();
+    void instantRelease();    // release qwobject etc.
     void updateOutputs();
     void setPrimaryOutput(WOutput *output);
     void setBuffer(QW_NAMESPACE::QWBuffer *newBuffer);
@@ -51,6 +52,7 @@ public:
     QPointer<QW_NAMESPACE::QWSurface> handle;
     QPointer<QW_NAMESPACE::QWSubsurface> subsurface;
     bool hasSubsurface = false;
+    bool isSubsurface = false;  // qpointer would be null due to qwsubsurface' destroy, cache here
     uint32_t preferredBufferScale = 1;
     uint32_t explicitPreferredBufferScale = 0;
 

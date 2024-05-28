@@ -22,7 +22,13 @@ endif()
 find_package(PkgConfig)
 pkg_search_module(LIBDRM REQUIRED IMPORTED_TARGET libdrm)
 pkg_search_module(WLROOTS REQUIRED IMPORTED_TARGET wlroots)
+pkg_search_module(WAYLAND REQUIRED IMPORTED_TARGET wayland-server)
+pkg_search_module(WAYLAND_PROTOCOLS REQUIRED IMPORTED_TARGET wayland-protocols)
 pkg_search_module(WLR_PROTOCOLS REQUIRED wlr-protocols)
+pkg_search_module(PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
+pkg_search_module(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
+pkg_search_module(XCB REQUIRED IMPORTED_TARGET xcb)
+pkg_search_module(EGL REQUIRED IMPORTED_TARGET egl)
 
 ws_generate(
     server
@@ -55,6 +61,7 @@ set(KERNEL_SOURCES
     kernel/winputdevice.cpp
     kernel/woutput.cpp
     kernel/wseat.cpp
+    kernel/wevent.cpp
     kernel/wserver.cpp
     kernel/wsurface.cpp
 
@@ -68,6 +75,8 @@ set(KERNEL_SOURCES
     kernel/wxcursorimage.cpp
     kernel/wglobal.cpp
     kernel/wsocket.cpp
+
+    ${CMAKE_CURRENT_BINARY_DIR}/text-input-unstable-v1-protocol.c
 )
 
 set(QTQUICK_SOURCES
@@ -108,6 +117,9 @@ set(QTQUICK_SOURCES
     qtquick/private/wquickforeigntoplevelmanagerv1.cpp
     qtquick/private/wbufferrenderer.cpp
     qtquick/private/wrenderbuffernode.cpp
+    qtquick/private/wquickxdgoutput.cpp
+    qtquick/private/wquickfractionalscalemanagerv1.cpp
+    qtquick/private/wquickscreencopy.cpp
 
     ${CMAKE_CURRENT_BINARY_DIR}/text-input-unstable-v1-protocol.c
 )
@@ -133,6 +145,7 @@ set(HEADERS
     kernel/winputdevice.h
     kernel/woutput.h
     kernel/wseat.h
+    kernel/wevent.h
     kernel/wserver.h
     kernel/wsurface.h
     kernel/wtexture.h
@@ -152,6 +165,7 @@ set(HEADERS
     kernel/WCursor
     kernel/WInputDevice
     kernel/WSeat
+    kernel/WEvent
     kernel/WInputEvent
     kernel/WTexture
     kernel/WXdgShell
@@ -201,10 +215,14 @@ set(PRIVATE_HEADERS
     qtquick/private/wquicktextinputv3_p.h
     qtquick/private/wquickinputmethodv2_p.h
     qtquick/private/wquickvirtualkeyboardv1_p.h
+    qtquick/private/winputmethodcommon_p.h
     qtquick/private/winputmethodhelper_p.h
     qtquick/private/wquickforeigntoplevelmanagerv1_p.h
     qtquick/private/wbufferrenderer_p.h
     qtquick/private/wrenderbuffernode_p.h
+    qtquick/private/wquickxdgoutput_p.h
+    qtquick/private/wquickfractionalscalemanagerv1_p.h
+    qtquick/private/wquickscreencopy_p.h
 
     ${CMAKE_CURRENT_BINARY_DIR}/text-input-unstable-v1-protocol.h
 )
@@ -237,6 +255,8 @@ add_library(${TARGET}
     ${QTQUICK_SOURCES}
 )
 
+add_library(Waylib::WaylibServer ALIAS ${TARGET})
+
 qt_add_qml_module(${TARGET}
     URI Waylib.Server
     VERSION "1.0" # Qt bug: The major version must be larger than 0
@@ -250,6 +270,7 @@ target_compile_definitions(${TARGET}
     PRIVATE
     WLR_USE_UNSTABLE
     LIBWAYLIB_SERVER_LIBRARY
+    QT_NO_SIGNALS_SLOTS_KEYWORDS
 )
 
 set_target_properties(${TARGET}
@@ -286,6 +307,12 @@ target_link_libraries(${TARGET}
     ${QT_LIBRARIES}
     PkgConfig::WLROOTS
     PkgConfig::LIBDRM
+    PkgConfig::WAYLAND
+    PkgConfig::WAYLAND_PROTOCOLS
+    PkgConfig::PIXMAN
+    PkgConfig::XKBCOMMON
+    PkgConfig::XCB
+    PkgConfig::EGL
 )
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)

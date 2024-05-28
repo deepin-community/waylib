@@ -77,7 +77,7 @@ Item {
             name: "seat0"
             cursor: Cursor {
                 id: cursor1
-
+                themeName: cursorThemeName
                 layout: QmlHelper.layout
             }
 
@@ -147,6 +147,7 @@ Item {
         // TODO: add attached property for XdgSurface
         XdgDecorationManager {
             id: decorationManager
+            preferredMode: XdgDecorationManager.Client
         }
 
         InputMethodManagerV2 {
@@ -181,6 +182,13 @@ Item {
                 })
             }
         }
+
+        XdgOutputManager {
+            id: xdgOutputManager
+            layout: QmlHelper.layout
+        }
+
+        ScreenCopyManager { }
     }
 
     InputMethodHelper {
@@ -207,6 +215,12 @@ Item {
         compositor: compositor
         width: QmlHelper.layout.implicitWidth
         height: QmlHelper.layout.implicitHeight
+
+        onOutputViewportInitialized: function (viewport) {
+            // Trigger QWOutput::frame signal in order to ensure WOutputHelper::renderable
+            // property is true, OutputRenderWindow when will render this output in next frame.
+            Helper.enableOutput(viewport.output)
+        }
 
         EventJunkman {
             anchors.fill: parent
@@ -239,13 +253,13 @@ Item {
                 TabButton {
                     text: qsTr("Stack Layout")
                     onClicked: {
-                        decorationManager.mode = XdgDecorationManager.PreferClientSide
+                        decorationManager.preferredMode = XdgDecorationManager.Client
                     }
                 }
                 TabButton {
                     text: qsTr("Tiled Layout")
                     onClicked: {
-                        decorationManager.mode = XdgDecorationManager.PreferServerSide
+                        decorationManager.preferredMode = XdgDecorationManager.Server
                     }
                 }
             }

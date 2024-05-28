@@ -45,6 +45,8 @@ public:
     void connect();
     void updatePosition();
 
+    void instantRelease();
+
     W_DECLARE_PUBLIC(WXdgSurface)
 
     QPointer<QWXdgSurface> handle;
@@ -72,8 +74,27 @@ WXdgSurfacePrivate::WXdgSurfacePrivate(WXdgSurface *qq, QWXdgSurface *hh)
 WXdgSurfacePrivate::~WXdgSurfacePrivate()
 {
     if (handle)
-        handle->setData(this, nullptr);
-    surface->removeAttachedData<WXdgSurface>();
+        handle->setData(nullptr, nullptr);
+    instantRelease();
+}
+
+void WXdgSurfacePrivate::instantRelease()
+{
+    if (!surface)
+        return;
+    W_Q(WXdgSurface);
+    handle->disconnect(q);
+    if (auto toplevel = handle->topToplevel())
+        toplevel->disconnect(q);
+    surface->deleteLater();
+    surface = nullptr;
+}
+
+void WXdgSurface::deleteLater()
+{
+    W_D(WXdgSurface);
+    d->instantRelease();
+    QObject::deleteLater();
 }
 
 void WXdgSurfacePrivate::on_configure(wlr_xdg_surface_configure *event)
@@ -298,13 +319,13 @@ QSize WXdgSurface::maxSize() const
 QString WXdgSurface::title() const
 {
     W_DC(WXdgSurface);
-    return {d->handle->topToplevel()->handle()->title};
+    return QString::fromUtf8(d->handle->topToplevel()->handle()->title);
 }
 
 QString WXdgSurface::appId() const
 {
     W_DC(WXdgSurface);
-    return {d->handle->topToplevel()->handle()->app_id};
+    return QString::fromLocal8Bit(d->handle->topToplevel()->handle()->app_id);
 }
 
 WXdgSurface *WXdgSurface::parentXdgSurface() const

@@ -7,12 +7,14 @@
 #include <WOutput>
 #include <WSurfaceItem>
 #include <wxdgsurface.h>
+#include <wrenderhelper.h>
 // TODO: Don't use private API
 #include <wquickbackend_p.h>
 
 #include <qwbackend.h>
 #include <qwdisplay.h>
 #include <qwoutput.h>
+#include <qwlogging.h>
 
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -329,6 +331,29 @@ void Helper::allowNonDrmOutputAutoChangeMode(WOutput *output)
     connect(output->handle(), &QWOutput::requestState, this, &Helper::onOutputRequeseState);
 }
 
+void Helper::enableOutput(WOutput *output)
+{
+    // Enable on default
+    auto qwoutput = output->handle();
+    // Don't care for WOutput::isEnabled, must do WOutput::commit here,
+    // In order to ensure trigger QWOutput::frame signal, WOutputRenderWindow
+    // needs this signal to render next frmae. Because QWOutput::frame signal
+    // maybe emit before WOutputRenderWindow::attach, if no commit here,
+    // WOutputRenderWindow will ignore this ouptut on render.
+    if (!qwoutput->property("_Enabled").toBool()) {
+        qwoutput->setProperty("_Enabled", true);
+
+        if (!qwoutput->handle()->current_mode) {
+            auto mode = qwoutput->preferredMode();
+            if (mode)
+                output->setMode(mode);
+        }
+        output->enable(true);
+        bool ok = output->commit();
+        Q_ASSERT(ok);
+    }
+}
+
 bool Helper::beforeDisposeEvent(WSeat *seat, QWindow *watched, QInputEvent *event)
 {
     if (event->type() == QEvent::KeyPress) {
@@ -356,17 +381,17 @@ bool Helper::beforeDisposeEvent(WSeat *seat, QWindow *watched, QInputEvent *even
 
     if (surfaceItem && (seat == this->seat || this->seat == nullptr)) {
         // for move resize
-        if (Q_LIKELY(event->type() == QEvent::MouseMove)) {
+        if (Q_LIKELY(event->type() == QEvent::MouseMove || event->type() == QEvent::TouchUpdate)) {
             auto cursor = seat->cursor();
             Q_ASSERT(cursor);
             QMouseEvent *ev = static_cast<QMouseEvent*>(event);
 
             if (resizeEdgets == 0) {
-                auto increment_pos = ev->globalPosition() - cursor->lastPressedPosition();
+                auto increment_pos = ev->globalPosition() - cursor->lastPressedOrTouchDownPosition();
                 auto new_pos = surfacePosOfStartMoveResize + surfaceItem->parentItem()->mapFromGlobal(increment_pos);
                 surfaceItem->setPosition(new_pos);
             } else {
-                auto increment_pos = surfaceItem->parentItem()->mapFromGlobal(ev->globalPosition() - cursor->lastPressedPosition());
+                auto increment_pos = surfaceItem->parentItem()->mapFromGlobal(ev->globalPosition() - cursor->lastPressedOrTouchDownPosition());
                 QRectF geo(surfacePosOfStartMoveResize, surfaceSizeOfStartMoveResize);
 
                 if (resizeEdgets & Qt::LeftEdge)
@@ -381,12 +406,12 @@ bool Helper::beforeDisposeEvent(WSeat *seat, QWindow *watched, QInputEvent *even
 
                 if (surface->checkNewSize(geo.size().toSize())) {
                     surfaceItem->setPosition(geo.topLeft());
-                    surfaceItem->setSize(geo.size());
+                    surfaceItem->resizeSurface(geo.size().toSize());
                 }
             }
 
             return true;
-        } else if (event->type() == QEvent::MouseButtonRelease) {
+        } else if (event->type() == QEvent::MouseButtonRelease || event->type() == QEvent::TouchEnd) {
             stopMoveResize();
         }
     }
@@ -484,8 +509,9 @@ OutputInfo* Helper::getOutputInfo(WOutput *output)
 }
 
 int main(int argc, char *argv[]) {
-//    QQuickWindow::setGraphicsApi(QSGRendererInterface::Vulkan);
+    WRenderHelper::setupRendererBackend();
 
+    QWLog::init();
     WServer::initializeQPA();
 //    QQuickStyle::setStyle("Material");
 
@@ -495,6 +521,9 @@ int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
 
     QQmlApplicationEngine waylandEngine;
+    QString cursorThemeName = getenv("XCURSOR_THEME");
+    waylandEngine.rootContext()->setContextProperty("cursorThemeName", cursorThemeName);
+
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     waylandEngine.loadFromModule("Tinywl", "Main");
 #else

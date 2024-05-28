@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "wrenderhelper.h"
-#include "wbackend.h"
 #include "wtools.h"
 #include "private/wqmlhelper_p.h"
 
@@ -13,6 +12,7 @@
 #include <qwbuffer.h>
 #include <qwtexture.h>
 #include <qwbufferinterface.h>
+#include <qwdisplay.h>
 
 #include <QSGTexture>
 #include <private/qquickrendercontrol_p.h>
@@ -27,7 +27,6 @@ extern "C" {
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/render/gles2.h>
 #undef static
-#include <wlr/render/pixman.h>
 #include <wlr/render/egl.h>
 #include <wlr/render/pixman.h>
 #ifdef ENABLE_VULKAN_RENDER
@@ -37,6 +36,9 @@ extern "C" {
 #include <wlr/backend.h>
 #include <wlr/backend/interface.h>
 #include <wlr/types/wlr_buffer.h>
+#include <wlr/render/drm_format_set.h>
+#include <wlr/render/allocator.h>
+#include <wlr/render/swapchain.h>
 }
 
 #include <drm_fourcc.h>
@@ -61,6 +63,28 @@ struct BufferData {
     QQuickWindowRenderTarget windowRenderTarget;
 
     inline void resetWindowRenderTarget() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+        if (windowRenderTarget.rt.owns)
+            delete windowRenderTarget.rt.renderTarget;
+
+        delete windowRenderTarget.res.texture;
+        delete windowRenderTarget.res.renderBuffer;
+        delete windowRenderTarget.res.rpDesc;
+
+        windowRenderTarget.rt = {};
+        windowRenderTarget.res = {};
+        { // windowRenderTarget.implicitBuffers.reset(rhi);
+            delete windowRenderTarget.implicitBuffers.depthStencil;
+            delete windowRenderTarget.implicitBuffers.depthStencilTexture;
+            delete windowRenderTarget.implicitBuffers.multisampleTexture;
+            windowRenderTarget.implicitBuffers = {};
+        }
+
+        if (windowRenderTarget.sw.owns)
+            delete windowRenderTarget.sw.paintDevice;
+
+        windowRenderTarget.sw = {};
+#else
         if (windowRenderTarget.owns) {
             delete windowRenderTarget.renderTarget;
             delete windowRenderTarget.rpDesc;
@@ -77,6 +101,7 @@ struct BufferData {
         windowRenderTarget.depthStencil = nullptr;
         windowRenderTarget.paintDevice = nullptr;
         windowRenderTarget.owns = false;
+#endif
     }
 };
 
@@ -104,11 +129,17 @@ static bool createRhiRenderTarget(const QRhiColorAttachment &colorAttachment,
         return false;
     }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    dst.rt.renderTarget = rt.release();
+    dst.res.rpDesc = rp.release();
+    dst.implicitBuffers.depthStencil = depthStencil.release();
+    dst.rt.owns = true; // ownership of the native resource itself is not transferred but the QRhi objects are on us now
+#else
     dst.renderTarget = rt.release();
     dst.rpDesc = rp.release();
     dst.depthStencil = depthStencil.release();
     dst.owns = true; // ownership of the native resource itself is not transferred but the QRhi objects are on us now
-
+#endif
     return true;
 }
 
@@ -120,7 +151,13 @@ bool createRhiRenderTarget(QRhi *rhi, const QQuickRenderTarget &source, QQuickWi
     case QQuickRenderTargetPrivate::Type::NativeTexture: {
         const auto format = rtd->u.nativeTexture.rhiFormat == QRhiTexture::UnknownFormat ? QRhiTexture::RGBA8
                                                                                          : QRhiTexture::Format(rtd->u.nativeTexture.rhiFormat);
-        const auto flags = QRhiTexture::RenderTarget | QRhiTexture::Flags(rtd->u.nativeTexture.rhiFlags);
+        const auto flags = QRhiTexture::RenderTarget | QRhiTexture::Flags(
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+                               rtd->u.nativeTexture.rhiFormatFlags
+#else
+                               rtd->u.nativeTexture.rhiFlags
+#endif
+                                                                          );
         std::unique_ptr<QRhiTexture> texture(rhi->newTexture(format, rtd->pixelSize, rtd->sampleCount, flags));
 #if QT_VERSION < QT_VERSION_CHECK(6, 6, 0)
         if (!texture->createFrom({ rtd->u.nativeTexture.object, rtd->u.nativeTexture.layout }))
@@ -131,7 +168,11 @@ bool createRhiRenderTarget(QRhi *rhi, const QQuickRenderTarget &source, QQuickWi
         QRhiColorAttachment att(texture.get());
         if (!createRhiRenderTarget(att, rtd->pixelSize, rtd->sampleCount, rhi, dst))
             return false;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+        dst.res.texture = texture.release();
+#else
         dst.texture = texture.release();
+#endif
         return true;
     }
     case QQuickRenderTargetPrivate::Type::NativeRenderbuffer: {
@@ -143,7 +184,11 @@ bool createRhiRenderTarget(QRhi *rhi, const QQuickRenderTarget &source, QQuickWi
         QRhiColorAttachment att(renderbuffer.get());
         if (!createRhiRenderTarget(att, rtd->pixelSize, rtd->sampleCount, rhi, dst))
             return false;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+        dst.res.renderBuffer = renderbuffer.release();
+#else
         dst.renderBuffer = renderbuffer.release();
+#endif
         return true;
     }
 
@@ -207,7 +252,11 @@ bool WRenderHelperPrivate::ensureRhiRenderTarget(QQuickRenderControl *rc, Buffer
     bool ok = createRhiRenderTarget(rhi, tmp, data->windowRenderTarget);
     if (!ok)
         return false;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    data->renderTarget = QQuickRenderTarget::fromRhiRenderTarget(data->windowRenderTarget.rt.renderTarget);
+#else
     data->renderTarget = QQuickRenderTarget::fromRhiRenderTarget(data->windowRenderTarget.renderTarget);
+#endif
     data->renderTarget.setDevicePixelRatio(tmp.devicePixelRatio());
     data->renderTarget.setMirrorVertically(tmp.mirrorVertically());
 
@@ -369,7 +418,7 @@ public:
 
     bool getShm(wlr_shm_attributes *attribs) const override;
     bool beginDataPtrAccess(uint32_t flags, void **data, uint32_t *format, size_t *stride) override;
-    void endDataPtrAccess();
+    void endDataPtrAccess() override;
 
 private:
     QImage m_image;
@@ -406,11 +455,11 @@ void QImageBuffer::endDataPtrAccess()
 
 }
 
-QWBuffer *WRenderHelper::toBuffer(QWRenderer *renderer, QSGTexture *texture)
+QWBuffer *WRenderHelper::toBuffer(QWRenderer *renderer, QSGTexture *texture, QSGRendererInterface::GraphicsApi api)
 {
     const QSize size = texture->textureSize();
 
-    switch (getGraphicsApi()) {
+    switch (api) {
     case QSGRendererInterface::OpenGL: {
         Q_ASSERT(wlr_renderer_is_gles2(renderer->handle()));
         auto egl = wlr_gles2_renderer_get_egl(renderer->handle());
@@ -539,9 +588,13 @@ static QWRenderer *createRendererWithType(const char *type, QWBackend *backend)
 
 QWRenderer *WRenderHelper::createRenderer(QWBackend *backend)
 {
-    QWRenderer *renderer = nullptr;
     auto api = getGraphicsApi();
+    return createRenderer(backend, api);
+}
 
+QWRenderer *WRenderHelper::createRenderer(QWBackend *backend, QSGRendererInterface::GraphicsApi api)
+{
+    QWRenderer *renderer = nullptr;
     switch (api) {
     case QSGRendererInterface::OpenGL:
         renderer = createRendererWithType("gles2", backend);
@@ -565,6 +618,130 @@ QWRenderer *WRenderHelper::createRenderer(QWBackend *backend)
 
     return renderer;
 }
+
+constexpr const char *GraphicsApiName(QSGRendererInterface::GraphicsApi api)
+{
+    switch (api) {
+        using enum QSGRendererInterface::GraphicsApi;
+    case Software:
+        return "Software";
+    case OpenGL:
+        return "OpenGL";
+    case Vulkan:
+        return "Vulkan";
+    default:
+        return "Unknown/Unsupported";
+    }
+}
+
+void WRenderHelper::setupRendererBackend(QWBackend *testBackend)
+{
+    const auto wlrRenderer = qgetenv("WLR_RENDERER");
+
+    if (wlrRenderer == "auto" || wlrRenderer.isEmpty()) {
+        if (qEnvironmentVariableIsSet("QSG_RHI_BACKEND")) {
+            // when environment variable QSG_RHI_BACKEND was set, don't call setGraphicsApi
+            return;
+        }
+
+        QList<QSGRendererInterface::GraphicsApi> apiList = {
+            QSGRendererInterface::OpenGL,
+            QSGRendererInterface::Software
+            // TODO: Add vulkan to list.
+        };
+        std::unique_ptr<QWDisplay> display { nullptr };
+        if (!testBackend) {
+            display.reset(new QWDisplay());
+            testBackend = QWBackend::autoCreate(display.get());
+
+            if (!testBackend)
+                qFatal("Failed to create wlr_backend");
+
+            testBackend->start();
+        }
+        QQuickWindow::setGraphicsApi(WRenderHelper::probe(testBackend, apiList));
+    } else if (wlrRenderer == "gles2") {
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    } else if (wlrRenderer == "vulkan") {
+#ifdef ENABLE_VULKAN_RENDER
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Vulkan);
+#else
+        qFatal("Vulkan support is not enabled");
+#endif
+    } else if (wlrRenderer == "pixman") {
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+    } else {
+        qFatal() << "Unknown/Unsupported wlr renderer: " << wlrRenderer;
+    }
+}
+
+QSGRendererInterface::GraphicsApi WRenderHelper::probe(QWBackend *testBackend, const QList<QSGRendererInterface::GraphicsApi> &apiList)
+{
+    auto acceptApi = QSGRendererInterface::Unknown;
+
+    for (auto api : apiList) {
+        auto renderer = createRenderer(testBackend, api);
+        if (!renderer) {
+            qInfo() << GraphicsApiName(api) << " api failed to create wlr_renderer";
+            continue;
+        }
+
+        const auto *formats = renderer->getDmabufTextureFormats();
+
+        if (formats && formats->len == 0) {
+            qInfo() << GraphicsApiName(api) << " api don't support any format";
+            continue;
+        }
+
+        // TODO: how to test when formats gets NULL
+        if (formats && formats->len) {
+            auto allocDeleter = [](wlr_allocator *alloc) {
+                wlr_allocator_destroy(alloc);
+            };
+            std::unique_ptr<wlr_allocator, decltype(allocDeleter)> alloc {
+                wlr_allocator_autocreate(testBackend->handle(), renderer->handle())
+                , allocDeleter
+            };
+
+            auto swapchainDeleter = [](wlr_swapchain *swapchain) {
+                wlr_swapchain_destroy(swapchain);
+            };
+
+            bool hasSupportedFormat = false;
+            for (int formatId = 0; formatId < formats->len; formatId++) {
+                auto *format = &formats->formats[formatId];
+
+                std::unique_ptr<wlr_swapchain, decltype(swapchainDeleter)> swapchain {
+                    wlr_swapchain_create(alloc.get(), 1000, 800, format)
+                    , swapchainDeleter
+                };
+
+                auto *buffer = wlr_swapchain_acquire(swapchain.get(), nullptr); // destroy follow swapchain
+
+                if (!buffer) {
+                    continue;
+                } else {
+                    std::unique_ptr<QWTexture> texture { QWTexture::fromBuffer(renderer, QWBuffer::from(buffer)) };
+                    if (!texture)
+                        continue;
+                    hasSupportedFormat = true;
+                    break;
+                }
+            }
+
+            if (!hasSupportedFormat) {
+                qInfo() << GraphicsApiName(api) << " api failed to convert any buffer to texture";
+                continue;
+            }
+        }
+
+        acceptApi = api;
+        break;
+    }
+
+    return acceptApi;
+}
+
 
 WAYLIB_SERVER_END_NAMESPACE
 

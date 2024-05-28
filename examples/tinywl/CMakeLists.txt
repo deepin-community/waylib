@@ -15,6 +15,7 @@ option(START_DEMO "Start demo when boot" ON)
 
 find_package(PkgConfig REQUIRED)
 pkg_search_module(PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
+pkg_search_module(WAYLAND REQUIRED IMPORTED_TARGET wayland-server)
 
 add_executable(tinywl-qtquick
     main.cpp
@@ -58,8 +59,9 @@ target_link_libraries(tinywl-qtquick
     PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
-    waylibserver
+    Waylib::WaylibServer
     PkgConfig::PIXMAN
+    PkgConfig::WAYLAND
 )
 
 if (INSTALL_TINYWL)

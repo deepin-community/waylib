@@ -14,11 +14,13 @@
 #include <qwcursor.h>
 #include <qwcompositor.h>
 #include <qwdatadevice.h>
+#include <qwpointergesturesv1.h>
 
 #include <QQuickWindow>
 #include <QGuiApplication>
 #include <QQuickItem>
 #include <QDebug>
+#include <QTimer>
 
 #include <qpa/qwindowsysteminterface.h>
 #include <private/qxkbcommon_p.h>
@@ -45,6 +47,7 @@ WAYLIB_SERVER_BEGIN_NAMESPACE
 Q_LOGGING_CATEGORY(qLcWlrTouch, "waylib.server.seat", QtWarningMsg)
 Q_LOGGING_CATEGORY(qLcWlrTouchEvents, "waylib.server.seat.events.touch", QtWarningMsg)
 Q_LOGGING_CATEGORY(qLcWlrDragEvents, "waylib.server.seat.events.drag", QtWarningMsg)
+Q_LOGGING_CATEGORY(qLcWlrGestureEvents, "waylib.server.seat.events.gesture", QtWarningMsg)
 
 #if QT_CONFIG(wheelevent)
 class WSeatWheelEvent : public QWheelEvent {
@@ -78,6 +81,24 @@ public:
         , name(name)
     {
         pendingEvents.reserve(2);
+
+        m_repeatTimer.callOnTimeout([&](){
+            if (!focusWindow) {
+                return;
+            }
+            auto rawdevice = qobject_cast<QWKeyboard*>(WInputDevice::from(m_repeatKey->device())->handle())->handle();
+            m_repeatTimer.setInterval(1000 / rawdevice->repeat_info.rate);
+            auto evPress = QKeyEvent(QEvent::KeyPress, m_repeatKey->key(), m_repeatKey->modifiers(),
+                m_repeatKey->nativeScanCode(), m_repeatKey->nativeVirtualKey(), m_repeatKey->nativeModifiers(),
+                m_repeatKey->text(), true, m_repeatKey->count(), m_repeatKey->device());
+            auto evRelease = QKeyEvent(QEvent::KeyRelease, m_repeatKey->key(), m_repeatKey->modifiers(),
+                m_repeatKey->nativeScanCode(), m_repeatKey->nativeVirtualKey(), m_repeatKey->nativeModifiers(),
+                m_repeatKey->text(), true, m_repeatKey->count(), m_repeatKey->device());
+            evPress.setTimestamp(m_repeatKey->timestamp());
+            evRelease.setTimestamp(m_repeatKey->timestamp());
+            handleKeyEvent(evPress);
+            handleKeyEvent(evRelease);
+        });
     }
     ~WSeatPrivate() {
         if (onEventObjectDestroy)
@@ -280,11 +301,14 @@ public:
     void updateCapabilities();
     void attachInputDevice(WInputDevice *device);
     void detachInputDevice(WInputDevice *device);
+    // handle spontaneous & synthetic key event for focusWindow
+    void handleKeyEvent(QKeyEvent &e);
 
     W_DECLARE_PUBLIC(WSeat)
 
     QString name;
-    WCursor* cursor = nullptr;
+    WCursor *cursor = nullptr;
+    QWPointerGesturesV1 *gesture = nullptr;
     QVector<WInputDevice*> deviceList;
     QVector<WInputDevice*> touchDeviceList;
     QPointer<WSeatEventFilter> eventFilter;
@@ -292,6 +316,10 @@ public:
     QPointer<QObject> pointerFocusEventObject;
     QMetaObject::Connection onEventObjectDestroy;
     wlr_surface *oldPointerFocusSurface = nullptr;
+
+    bool gestureActive = false;
+    int gestureFingers = 0;
+    qreal lastScale = 1.0;
 
     struct EventState {
         // Don't use it, its may be a invalid pointer
@@ -344,6 +372,10 @@ public:
             return nullptr;
         }
     };
+
+    // for keyboard event
+    QTimer m_repeatTimer;
+    std::unique_ptr<QKeyEvent> m_repeatKey;
 };
 
 void WSeatPrivate::on_destroy()
@@ -404,7 +436,17 @@ void WSeatPrivate::on_start_drag(wlr_drag *drag)
         cursor->setDragSurface(wsurface);
     }
 }
-
+void WSeatPrivate::handleKeyEvent(QKeyEvent &e)
+{
+    Q_ASSERT(focusWindow);
+    if (e.type() == QEvent::KeyPress && QWindowSystemInterface::handleShortcutEvent(focusWindow,
+                                     e.timestamp(), e.key(), e.modifiers(), e.nativeScanCode(),
+                                     e.nativeVirtualKey(), e.nativeModifiers(),
+                                     e.text(), e.isAutoRepeat(), e.count())) {
+        return;
+    }
+    QCoreApplication::sendEvent(focusWindow, &e);
+}
 void WSeatPrivate::on_keyboard_key(wlr_keyboard_key_event *event, WInputDevice *device)
 {
     auto keyboard = qobject_cast<QWKeyboard*>(device->handle());
@@ -419,15 +461,27 @@ void WSeatPrivate::on_keyboard_key(wlr_keyboard_key_event *event, WInputDevice *
                 text, false, 1, device->qtDevice());
     e.setTimestamp(event->time_msec);
 
-    if (qt_sendShortcutOverrideEvent(focusWindow ? (QObject*)focusWindow.get() : (QObject*)qGuiApp,
-                                     e.timestamp(), e.key(), e.modifiers(),
-                                     e.text(), e.isAutoRepeat(), e.count())) {
-        return;
-    }
-
     if (focusWindow) {
-        QCoreApplication::sendEvent(focusWindow, &e);
+        handleKeyEvent(e);
+        if (et == QEvent::KeyPress && xkb_keymap_key_repeats(keyboard->handle()->keymap, code)) {
+            if (m_repeatKey) {
+                m_repeatTimer.stop();
+            }
+            m_repeatKey = std::make_unique<QKeyEvent>(et, qtkey, keyModifiers, code, event->keycode, keyboard->getModifiers(),
+                text, false, 1, device->qtDevice());
+            m_repeatKey->setTimestamp(event->time_msec);
+            m_repeatTimer.setInterval(keyboard->handle()->repeat_info.delay);
+            m_repeatTimer.start();
+        } else if (et == QEvent::KeyRelease && m_repeatKey && m_repeatKey->nativeScanCode() == code) {
+            m_repeatTimer.stop();
+            m_repeatKey.reset();
+        }
     } else {
+        if (et == QEvent::KeyPress && qt_sendShortcutOverrideEvent((QObject*)qGuiApp,
+                                        e.timestamp(), e.key(), e.modifiers(),
+                                        e.text(), e.isAutoRepeat(), e.count())) {
+            return;
+        }
         doNotifyKey(device, event->keycode, event->state, event->time_msec);
     }
 }
@@ -699,12 +753,14 @@ bool WSeat::sendEvent(WSurface *target, QObject *shellObject, QObject *eventObje
     }
     case QEvent::KeyPress: {
         auto e = static_cast<QKeyEvent*>(event);
-        d->doNotifyKey(inputDevice, e->nativeVirtualKey(), WL_KEYBOARD_KEY_STATE_PRESSED, e->timestamp());
+        if (!e->isAutoRepeat())
+            d->doNotifyKey(inputDevice, e->nativeVirtualKey(), WL_KEYBOARD_KEY_STATE_PRESSED, e->timestamp());
         break;
     }
     case QEvent::KeyRelease: {
         auto e = static_cast<QKeyEvent*>(event);
-        d->doNotifyKey(inputDevice, e->nativeVirtualKey(), WL_KEYBOARD_KEY_STATE_RELEASED, e->timestamp());
+        if (!e->isAutoRepeat())
+            d->doNotifyKey(inputDevice, e->nativeVirtualKey(), WL_KEYBOARD_KEY_STATE_RELEASED, e->timestamp());
         break;
     }
     case QEvent::TouchBegin: Q_FALLTHROUGH();
@@ -719,6 +775,44 @@ bool WSeat::sendEvent(WSurface *target, QObject *shellObject, QObject *eventObje
     }
     case QEvent::TouchCancel: {
         d->doTouchNotifyCancel(target->handle());
+        break;
+    }
+    case QEvent::NativeGesture: {
+        if (!d->gesture)
+            break;
+        auto e = static_cast<WGestureEvent*>(event);
+        switch (e->gestureType()) {
+            case Qt::NativeGestureType::BeginNativeGesture:
+                if (e->libInputGestureType() == WGestureEvent::WLibInputGestureType::SwipeGesture)
+                    d->gesture->sendSwipeBegin(d->handle(), e->timestamp(), e->fingerCount());
+                if (e->libInputGestureType() == WGestureEvent::WLibInputGestureType::PinchGesture)
+                    d->gesture->sendPinchBegin(d->handle(), e->timestamp(), e->fingerCount());
+                if (e->libInputGestureType() == WGestureEvent::WLibInputGestureType::HoldGesture)
+                    d->gesture->sendHoldBegin(d->handle(), e->timestamp(), e->fingerCount());
+                break;
+            case Qt::NativeGestureType::PanNativeGesture:
+                if (e->libInputGestureType() == WGestureEvent::WLibInputGestureType::SwipeGesture)
+                    d->gesture->sendSwipeUpdate(d->handle(), e->timestamp(), e->delta());
+                if (e->libInputGestureType() == WGestureEvent::WLibInputGestureType::PinchGesture)
+                    d->gesture->sendPinchUpdate(d->handle(), e->timestamp(), e->delta(), d->lastScale, 0);
+                break;
+            case Qt::NativeGestureType::ZoomNativeGesture:
+                d->gesture->sendPinchUpdate(d->handle(), e->timestamp(), e->delta(), d->lastScale, 0);
+                break;
+            case Qt::NativeGestureType::RotateNativeGesture:
+                d->gesture->sendPinchUpdate(d->handle(), e->timestamp(), e->delta(), d->lastScale, e->value());
+                break;
+            case Qt::NativeGestureType::EndNativeGesture:
+                if (e->libInputGestureType() == WGestureEvent::WLibInputGestureType::SwipeGesture)
+                    d->gesture->sendSwipeEnd(d->handle(), e->timestamp(), e->cancelled());
+                if (e->libInputGestureType() == WGestureEvent::WLibInputGestureType::PinchGesture)
+                    d->gesture->sendPinchEnd(d->handle(), e->timestamp(), e->cancelled());
+                if (e->libInputGestureType() == WGestureEvent::WLibInputGestureType::HoldGesture)
+                    d->gesture->sendHoldEnd(d->handle(), e->timestamp(), e->cancelled());
+                break;
+            default:
+                break;
+        }
         break;
     }
     default:
@@ -743,6 +837,8 @@ bool WSeat::sendEvent(WSurface *target, QObject *shellObject, QObject *eventObje
         // Maybe this event is eat by the event grabber
         if (target != seat->keyboardFocusSurface())
             return true;
+        break;
+    default:
         break;
     }
     }
@@ -909,6 +1005,116 @@ void WSeat::notifyFrame(WCursor *cursor)
     d->doNotifyFrame();
 }
 
+void WSeat::notifyGestureBegin(WCursor *cursor, WInputDevice *device, uint32_t time_msec, uint32_t fingers, WGestureEvent::WLibInputGestureType libInputGestureType)
+{
+    W_D(WSeat);
+    if (d->gestureActive) {
+        qCWarning(qLcWlrGestureEvents) << "Unexpected GestureBegin while already active";
+    }
+    d->gestureActive = true;
+    d->gestureFingers = fingers;
+    auto qwDevice = qobject_cast<QPointingDevice*>(device->qtDevice());
+    auto *w = cursor->eventWindow();
+    const QPointF &global = cursor->position();
+    const QPointF local = w ? global - QPointF(w->position()) : QPointF();
+
+    WGestureEvent e(libInputGestureType, Qt::NativeGestureType::BeginNativeGesture, qwDevice,
+                    fingers, local, local, global, 0, QPointF(0, 0));
+    if (w)
+        QCoreApplication::sendEvent(w, &e);
+}
+
+void WSeat::notifyGestureUpdate(WCursor *cursor, WInputDevice *device, uint32_t time_msec, const QPointF &delta, double scale, double rotation, WGestureEvent::WLibInputGestureType libInputGestureType)
+{
+    W_D(WSeat);
+    if (!d->gestureActive) {
+        qCWarning(qLcWlrGestureEvents) << "Unexpected GestureUpdate while not begin";
+        return;
+    }
+    auto qwDevice = qobject_cast<QPointingDevice*>(device->qtDevice());
+    auto *w = cursor->eventWindow();
+    const QPointF &global = cursor->position();
+    const QPointF local = w ? global - QPointF(w->position()) : QPointF();
+    if (!delta.isNull()) {
+        WGestureEvent e(libInputGestureType, Qt::NativeGestureType::PanNativeGesture, qwDevice,
+                        d->gestureFingers, local, local, global, 0, delta);
+        if (w)
+            QCoreApplication::sendEvent(w, &e);
+    }
+    if (rotation != 0) {
+        WGestureEvent e(libInputGestureType, Qt::NativeGestureType::RotateNativeGesture, qwDevice,
+                        d->gestureFingers, local, local, global, rotation, delta);
+        if (w)
+            QCoreApplication::sendEvent(w, &e);
+    }
+    if (scale != 0) {
+        WGestureEvent e(libInputGestureType, Qt::NativeGestureType::ZoomNativeGesture, qwDevice,
+                        d->gestureFingers, local, local, global, rotation, delta);
+        if (w)
+            QCoreApplication::sendEvent(w, &e);
+        d->lastScale = scale;
+    }
+}
+
+void WSeat::notifyGestureEnd(WCursor *cursor, WInputDevice *device, uint32_t time_msec, bool cancelled, WGestureEvent::WLibInputGestureType libInputGestureType)
+{
+    W_D(WSeat);
+    if (!d->gestureActive) {
+        qCWarning(qLcWlrGestureEvents) << "Unexpected GestureEnd while not begin";
+        return;
+    }
+    d->gestureActive = false;
+    auto qwDevice = qobject_cast<QPointingDevice*>(device->qtDevice());
+    auto *w = cursor->eventWindow();
+    const QPointF &global = cursor->position();
+    const QPointF local = w ? global - QPointF(w->position()) : QPointF();
+
+    WGestureEvent e(libInputGestureType, Qt::NativeGestureType::EndNativeGesture, qwDevice,
+                    d->gestureFingers, local, local, global, 0, QPointF(0, 0));
+    if (w)
+        QCoreApplication::sendEvent(w, &e);
+}
+
+void WSeat::notifyHoldBegin(WCursor *cursor, WInputDevice *device, uint32_t time_msec, uint32_t fingers)
+{
+    W_D(WSeat);
+    if (d->gestureActive) {
+        qCWarning(qLcWlrGestureEvents) << "Unexpected HoldBegin while already active";
+    }
+    d->gestureActive = true;
+    d->gestureFingers = fingers;
+    auto qwDevice = qobject_cast<QPointingDevice*>(device->qtDevice());
+    auto *w = cursor->eventWindow();
+    const QPointF &global = cursor->position();
+    const QPointF local = w ? global - QPointF(w->position()) : QPointF();
+
+    WGestureEvent e(WGestureEvent::HoldGesture, Qt::NativeGestureType::BeginNativeGesture, qwDevice,
+                    d->gestureFingers, local, local, global, 0, QPointF(0, 0));
+    e.setTimestamp(time_msec);
+    if (w)
+        QCoreApplication::sendEvent(w, &e);
+}
+void WSeat::notifyHoldEnd(WCursor *cursor, WInputDevice *device, uint32_t time_msec, bool cancelled)
+{
+    W_D(WSeat);
+    if (!d->gestureActive) {
+        qCWarning(qLcWlrGestureEvents) << "Unexpected HoldEnd while not begin";
+        return;
+    }
+    d->gestureActive = false;
+    auto qwDevice = qobject_cast<QPointingDevice*>(device->qtDevice());
+    auto *w = cursor->eventWindow();
+    const QPointF &global = cursor->position();
+    const QPointF local = w ? global - QPointF(w->position()) : QPointF();
+
+    WGestureEvent e(WGestureEvent::HoldGesture, Qt::NativeGestureType::EndNativeGesture, qwDevice,
+                    d->gestureFingers, local, local, global, 0, QPointF(0, 0));
+    e.setTimestamp(time_msec);
+    e.setCancelled(cancelled);
+    if (w)
+        QCoreApplication::sendEvent(w, &e);
+}
+
 // deal with touch event form wlr_cursor
 
 void WSeat::notifyTouchDown(WCursor *cursor, WInputDevice *device, int32_t touch_id, uint32_t time_msec)
@@ -1062,6 +1268,8 @@ void WSeat::create(WServer *server)
         if (d->cursor)
             d->cursor->attachInputDevice(i);
     }
+    if (!qEnvironmentVariableIsSet("WAYLIB_DISABLE_GESTURE"))
+        d->gesture = QWPointerGesturesV1::create(server->handle());
 
     d->updateCapabilities();
 }
@@ -1082,7 +1290,7 @@ void WSeat::destroy(WServer *)
         setCursor(nullptr);
 
     if (m_handle) {
-        d->handle()->setData(this, nullptr);
+        d->handle()->setData(nullptr, nullptr);
         m_handle = nullptr;
     }
 }
@@ -1171,6 +1379,8 @@ bool WSeat::filterUnacceptedEvent(QWindow *targetWindow, QInputEvent *event)
         //        if (d->handle()->touchHasGrab())
         //            return sendEvent(nullptr, nullptr, nullptr, event);
         //        break;
+    default:
+        break;
     }
 
     if (d->eventFilter && d->eventFilter->unacceptedEvent(this, targetWindow, event))
