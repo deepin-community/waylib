@@ -1,3 +1,9 @@
+waylib (0.2.0-alpha1) unstable; urgency=medium
+
+   * Sync upstream code
+
+  -- Dingyuan Zhang <zhangdingyuan@deepin.org>  Tue, 28 May 2024 13:07:53 +0800
+
 waylib (0.1.1-0deepin) unstable; urgency=medium
 
   * Exclude client self when request grab keyboard on virtual keyboard.

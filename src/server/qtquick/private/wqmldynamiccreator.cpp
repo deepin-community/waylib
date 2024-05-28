@@ -259,6 +259,10 @@ void WQmlCreatorComponent::create(QSharedPointer<WQmlCreatorDelegateData> data, 
     if (data->object) {
         Q_EMIT objectAdded(data->object, initialProperties);
         notifyCreatorObjectAdded(m_creator, data->object, initialProperties);
+    } else {
+        qWarning() << "WQmlCreatorComponent::create failed" << "parent=" << parent << "initialProperties=" << tmp;
+        for (auto e: d->state.errors)
+            qWarning() << e.error;
     }
 }
 
@@ -306,8 +310,11 @@ QVariant WQmlCreatorComponent::chooserRoleValue() const
     return m_chooserRoleValue;
 }
 
-void WQmlCreatorComponent::setChooserRoleValue(const QVariant &newChooserRoleValue)
+void WQmlCreatorComponent::setChooserRoleValue(QVariant newChooserRoleValue)
 {
+    // jsvalue assigned to qproperty aren't auto converted to QVariantMap, differs with invoke args
+    if (newChooserRoleValue.canConvert<QJSValue>())
+        newChooserRoleValue = newChooserRoleValue.value<QJSValue>().toVariant();
     if (m_chooserRoleValue == newChooserRoleValue)
         return;
     m_chooserRoleValue = newChooserRoleValue;

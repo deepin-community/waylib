@@ -91,7 +91,7 @@ public:
     void setChooserRole(const QString &newChooserRole);
 
     QVariant chooserRoleValue() const;
-    void setChooserRoleValue(const QVariant &newChooserRoleValue);
+    void setChooserRoleValue(QVariant newChooserRoleValue);
 
     bool autoDestroy() const;
     void setAutoDestroy(bool newAutoDestroy);
@@ -117,7 +117,7 @@ private:
     void remove(QSharedPointer<WQmlCreatorData> data) override;
 
     void destroy(QSharedPointer<WQmlCreatorDelegateData> data);
-    void remove(QSharedPointer<WQmlCreatorDelegateData> data);
+    void remove(QSharedPointer<WQmlCreatorDelegateData> data) override;
 
     void clear();
     void reset();

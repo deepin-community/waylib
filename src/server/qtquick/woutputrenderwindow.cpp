@@ -974,7 +974,8 @@ QVector<std::pair<OutputHelper*, WBufferRenderer*>> WOutputRenderWindowPrivate::
     QVector<OutputHelper*> renderResults;
     renderResults.reserve(outputs.size());
     for (OutputHelper *helper : outputs) {
-        if (!helper->renderable() || !helper->output()->isVisible())
+        if (!helper->renderable() || !helper->output()->isVisible()
+            || !helper->output()->output()->isEnabled())
             continue;
 
         if (!helper->contentIsDirty()) {
@@ -1092,6 +1093,15 @@ void WOutputRenderWindowPrivate::doRender()
     }
 
     resetGlState();
+
+    // On Intel&Nvidia multi-GPU environment, wlroots using Intel card do render for all
+    // outputs, and blit nvidia's output buffer in drm_connector_state_update_primary_fb,
+    // the 'blit' behavior will make EGL context to Nvidia renderer. So must done current
+    // OpenGL context here in order to ensure QtQuick always make EGL context to Intel
+    // renderer before next frame.
+    if (glContext)
+        glContext->doneCurrent();
+
     inRendering = false;
 }
 
@@ -1106,6 +1116,12 @@ WOutputRenderWindow::WOutputRenderWindow(QObject *parent)
 
     connect(contentItem(), &QQuickItem::widthChanged, this, &WOutputRenderWindow::widthChanged);
     connect(contentItem(), &QQuickItem::heightChanged, this, &WOutputRenderWindow::heightChanged);
+    // renderwindow inherits qquickwindow, default no focusscope-isolation & no focus on contentItem(QQuickRootItem) when startup
+    // setFocus(true) to deliver focus to children on startup, 
+    // set focusscope to persist & restore in-scope focusItem, even after other item takes away the focus
+    // see [QQuickApplicationWindow](qt6/qtdeclarative/src/quicktemplates/qquickapplicationwindow.cpp)
+    contentItem()->setFlag(QQuickItem::ItemIsFocusScope);
+    contentItem()->setFocus(true);
 }
 
 WOutputRenderWindow::~WOutputRenderWindow()
@@ -1135,10 +1151,12 @@ void WOutputRenderWindow::attach(WOutputViewport *output)
     Q_ASSERT(output->output());
 
     d->outputs << new OutputHelper(output, this);
+
     if (d->compositor) {
         auto qwoutput = d->outputs.last()->qwoutput();
         if (qwoutput->handle()->renderer != d->compositor->renderer()->handle())
             qwoutput->initRender(d->compositor->allocator(), d->compositor->renderer());
+        Q_EMIT outputViewportInitialized(output);
     }
 
     if (!d->isInitialized())
@@ -1241,6 +1259,7 @@ void WOutputRenderWindow::setCompositor(WWaylandCompositor *newCompositor)
         auto qwoutput = output->qwoutput();
         if (qwoutput->handle()->renderer != d->compositor->renderer()->handle())
             qwoutput->initRender(d->compositor->allocator(), d->compositor->renderer());
+        Q_EMIT outputViewportInitialized(output->output());
     }
 
     if (d->componentCompleted && d->compositor->isPolished()) {

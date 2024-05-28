@@ -166,7 +166,7 @@ public:
         }
 
         data = new Data();
-        if (data->data = get()->create(std::forward<DataKeys>(keys)...)) {
+        if ((data->data = get()->create(std::forward<DataKeys>(keys)...))) {
             dataList.append(data);
             return data;
         }
@@ -296,8 +296,13 @@ public:
             renderer->setDevicePixelRatio(base->devicePixelRatio());
             renderer->setDeviceRect(base->deviceRect());
             renderer->setViewportRect(base->viewportRect());
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+            renderer->setProjectionMatrix(base->projectionMatrix(0));
+            renderer->setProjectionMatrixWithNativeNDC(base->projectionMatrixWithNativeNDC(0));
+#else
             renderer->setProjectionMatrix(base->projectionMatrix());
             renderer->setProjectionMatrixWithNativeNDC(base->projectionMatrixWithNativeNDC());
+#endif
         } else {
             renderer->setDevicePixelRatio(1.0);
             renderer->setDeviceRect(QRect(QPoint(0, 0), pixelSize));
@@ -311,8 +316,13 @@ public:
         }
 
         if (Q_UNLIKELY(!matrix.isIdentity())) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+            renderer->setProjectionMatrix(renderer->projectionMatrix(0) * matrix);
+            renderer->setProjectionMatrixWithNativeNDC(renderer->projectionMatrixWithNativeNDC(0) * matrix);
+#else
             renderer->setProjectionMatrix(renderer->projectionMatrix() * matrix);
             renderer->setProjectionMatrixWithNativeNDC(renderer->projectionMatrixWithNativeNDC() * matrix);
+#endif
         }
 
         renderer->setRootNode(rootNode);
@@ -827,7 +837,7 @@ private:
             return true;
         }
 
-        bool hasMipmaps() const {
+        bool hasMipmaps() const override {
             return mipmapFiltering() != QSGTexture::None;
         }
 

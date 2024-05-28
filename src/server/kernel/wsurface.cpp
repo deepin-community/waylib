@@ -13,6 +13,7 @@
 #include <qwsubcompositor.h>
 #include <qwtexture.h>
 #include <qwbuffer.h>
+#include <qwfractionalscalemanagerv1.h>
 #include <QDebug>
 
 extern "C" {
@@ -35,9 +36,7 @@ WSurfacePrivate::WSurfacePrivate(WSurface *qq, QWSurface *handle)
 
 WSurfacePrivate::~WSurfacePrivate()
 {
-    if (handle)
-        handle->setData(this, nullptr);
-
+    instantRelease();
     if (buffer)
         buffer->unlock();
 }
@@ -174,6 +173,9 @@ void WSurfacePrivate::updatePreferredBufferScale()
     float maxScale = 1.0;
     for (auto o : outputs)
         maxScale = std::max(o->scale(), maxScale);
+    if (handle)
+        QWFractionalScaleManagerV1::notifyScale(handle, maxScale);
+
     preferredBufferScale = qCeil(maxScale);
     preferredBufferScaleChange();
 }
@@ -206,7 +208,10 @@ void WSurfacePrivate::setSubsurface(QWSubsurface *newSubsurface)
     subsurface = newSubsurface;
     QObject::connect(subsurface, &QWSubsurface::destroyed, q, &WSurface::isSubsurfaceChanged);
 
-    Q_EMIT q->isSubsurfaceChanged();
+    if (isSubsurface != !subsurface.isNull()){
+        isSubsurface = !subsurface.isNull();
+        Q_EMIT q->isSubsurfaceChanged();
+    }
 }
 
 void WSurfacePrivate::setHasSubsurface(bool newHasSubsurface)
@@ -393,7 +398,7 @@ WOutput *WSurface::primaryOutput() const
 bool WSurface::isSubsurface() const
 {
     W_DC(WSurface);
-    return d->subsurface;
+    return d->isSubsurface;
 }
 
 bool WSurface::hasSubsurface() const
@@ -456,6 +461,26 @@ void WSurface::unmap()
 {
     W_D(WSurface);
     wlr_surface_unmap(d->nativeHandle());
+}
+
+void WSurface::deleteLater()
+{
+    W_D(WSurface);
+    d->instantRelease();
+    QObject::deleteLater();
+}
+
+void WSurfacePrivate::instantRelease()
+{
+    W_Q(WSurface);
+    if (handle) {
+        handle->setData(nullptr, nullptr);
+        handle->disconnect(q);
+        subsurface->disconnect(q);
+        for (auto o : outputs)
+            o->disconnect(q);
+        handle = nullptr;
+    }
 }
 
 WAYLIB_SERVER_END_NAMESPACE

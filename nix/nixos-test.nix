@@ -22,8 +22,15 @@ makeTest
         variables = {
           WLR_RENDERER = "pixman";
           XDG_RUNTIME_DIR = "/run/user/1000";
+          WAYLIB_DISABLE_GESTURE = "on";
         };
-        systemPackages = with pkgs; [ waylib wayland-utils foot xterm ];
+        systemPackages = with pkgs; [
+          waylib
+          wayland-utils
+          foot
+          xterm
+          wlogout
+        ];
       };
 
       # Automatically start TinyWL when logging in on tty1:
@@ -59,11 +66,16 @@ makeTest
       machine.succeed("su - ${user.name} -c 'foot >&2 &'")
       machine.wait_until_succeeds("pgrep foot")
       machine.screenshot("tinywl_foot")
-     
+
       # Test run client in xwayland
       machine.succeed("su - ${user.name} -c 'xterm >&2 &'")
       machine.wait_until_succeeds("pgrep xterm")
       machine.screenshot("tinywl_xterm")
+
+      # Test layer shell
+      machine.succeed("su - ${user.name} -c 'wlogout -p layer-shell >&2 &'")
+      machine.wait_until_succeeds("pgrep wlogout")
+      machine.screenshot("tinywl_wlogout")
 
       # Terminate cleanly:
       machine.send_key("ctrl-q")
