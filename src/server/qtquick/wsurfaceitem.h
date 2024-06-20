@@ -5,6 +5,7 @@
 
 #include <wglobal.h>
 #include <WSurface>
+#include <wtoplevelsurface.h>
 
 #include <QQuickItem>
 
@@ -15,10 +16,10 @@ QT_END_NAMESPACE
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
 class WSurfaceItemContentPrivate;
-class WAYLIB_SERVER_EXPORT WSurfaceItemContent : public QQuickItem, public WObject
+class WAYLIB_SERVER_EXPORT WSurfaceItemContent : public QQuickItem
 {
     Q_OBJECT
-    W_DECLARE_PRIVATE(WSurfaceItemContent)
+    Q_DECLARE_PRIVATE(WSurfaceItemContent)
     Q_PROPERTY(WSurface* surface READ surface WRITE setSurface NOTIFY surfaceChanged FINAL)
     Q_PROPERTY(bool cacheLastBuffer READ cacheLastBuffer WRITE setCacheLastBuffer NOTIFY cacheLastBufferChanged FINAL)
     QML_NAMED_ELEMENT(SurfaceItemContent)
@@ -64,6 +65,7 @@ class WAYLIB_SERVER_EXPORT WSurfaceItem : public QQuickItem
     Q_OBJECT
     Q_DECLARE_PRIVATE(WSurfaceItem)
     Q_PROPERTY(WSurface* surface READ surface WRITE setSurface NOTIFY surfaceChanged)
+    Q_PROPERTY(WToplevelSurface* shellSurface READ shellSurface WRITE setShellSurface NOTIFY shellSurfaceChanged)
     Q_PROPERTY(QQuickItem* contentItem READ contentItem NOTIFY contentItemChanged)
     Q_PROPERTY(QQuickItem* eventItem READ eventItem NOTIFY eventItemChanged)
     Q_PROPERTY(ResizeMode resizeMode READ resizeMode WRITE setResizeMode NOTIFY resizeModeChanged FINAL)
@@ -113,6 +115,9 @@ public:
     WSurface *surface() const;
     void setSurface(WSurface *newSurface);
 
+    WToplevelSurface *shellSurface() const;
+    virtual bool setShellSurface(WToplevelSurface *surface);
+
     QQuickItem *contentItem() const;
     QQuickItem *eventItem() const;
 
@@ -146,7 +151,7 @@ public:
     void setDelegate(QQmlComponent *newDelegate);
     
     // resize internal surface, should be in SizeFromSurface mode
-    virtual bool resizeSurface(const QSize &newSize);
+    bool resizeSurface(const QSizeF &newSize);
 
 Q_SIGNALS:
     void surfaceChanged();
@@ -164,8 +169,10 @@ Q_SIGNALS:
     void bufferScaleChanged();
     void contentItemChanged();
     void delegateChanged();
+    void shellSurfaceChanged();
 
 protected:
+    explicit WSurfaceItem(WSurfaceItemPrivate &dd, QQuickItem *parent = nullptr);
     void componentComplete() override;
     void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
     void itemChange(ItemChange change, const ItemChangeData &data) override;
@@ -176,15 +183,13 @@ protected:
     virtual void initSurface();
     virtual bool sendEvent(QInputEvent *event);
 
+    virtual bool doResizeSurface(const QSize &newSize);
     virtual QRectF getContentGeometry() const;
     virtual QSizeF getContentSize() const;
     virtual bool inputRegionContains(const QPointF &position) const;
     virtual void surfaceSizeRatioChange();
 
     void updateSurfaceState();
-
-private:
-    W_PRIVATE_SLOT(void onHasSubsurfaceChanged())
 
     friend class EventItem;
 };

@@ -55,6 +55,13 @@ ws_generate(
     text-input-unstable-v1-protocol
 )
 
+ws_generate(
+    server
+    wayland-protocols
+    unstable/xdg-output/xdg-output-unstable-v1.xml
+    xdg-output-unstable-v1-protocol
+)
+
 set(KERNEL_SOURCES
     kernel/wbackend.cpp
     kernel/wcursor.cpp
@@ -64,6 +71,7 @@ set(KERNEL_SOURCES
     kernel/wevent.cpp
     kernel/wserver.cpp
     kernel/wsurface.cpp
+    kernel/wtoplevelsurface.cpp
 
     kernel/wtexture.cpp
     kernel/wtypes.cpp
@@ -95,6 +103,8 @@ set(QTQUICK_SOURCES
     qtquick/wquicktextureproxy.cpp
     qtquick/woutputlayer.cpp
     qtquick/wrenderbufferblitter.cpp
+    qtquick/wxdgsurfaceitem.cpp
+    qtquick/wxwaylandsurfaceitem.cpp
 
     qtquick/private/wquickxdgshell.cpp
     qtquick/private/wquickbackend.cpp
@@ -122,6 +132,7 @@ set(QTQUICK_SOURCES
     qtquick/private/wquickscreencopy.cpp
 
     ${CMAKE_CURRENT_BINARY_DIR}/text-input-unstable-v1-protocol.c
+    ${CMAKE_CURRENT_BINARY_DIR}/xdg-output-unstable-v1-protocol.c
 )
 
 set(UTILS_SOURCES
@@ -189,6 +200,8 @@ set(HEADERS
     qtquick/wquicktextureproxy.h
     qtquick/woutputlayer.h
     qtquick/wrenderbufferblitter.h
+    qtquick/wxdgsurfaceitem.h
+    qtquick/wxwaylandsurfaceitem.h
 
     utils/wtools.h
     utils/wthreadutils.h
@@ -198,7 +211,9 @@ set(HEADERS
 
 set(PRIVATE_HEADERS
     platformplugin/types.h
+    kernel/private/wglobal_p.h
     kernel/private/wsurface_p.h
+    kernel/private/wtoplevelsurface_p.h
     qtquick/private/woutputviewport_p.h
     qtquick/private/wquickcoordmapper_p.h
     qtquick/private/woutputitem_p.h
@@ -223,8 +238,10 @@ set(PRIVATE_HEADERS
     qtquick/private/wquickxdgoutput_p.h
     qtquick/private/wquickfractionalscalemanagerv1_p.h
     qtquick/private/wquickscreencopy_p.h
+    qtquick/private/wsurfaceitem_p.h
 
     ${CMAKE_CURRENT_BINARY_DIR}/text-input-unstable-v1-protocol.h
+    ${CMAKE_CURRENT_BINARY_DIR}/xdg-output-unstable-v1-protocol.h
 )
 
 if(NOT DISABLE_XWAYLAND)

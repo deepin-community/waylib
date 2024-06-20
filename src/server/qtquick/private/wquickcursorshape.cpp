@@ -4,6 +4,8 @@
 #include "wquickcursorshape_p.h"
 #include "wcursor.h"
 #include "wseat.h"
+#include "private/wglobal_p.h"
+
 #include <qwcursorshapev1.h>
 #include <qwseat.h>
 
@@ -111,10 +113,9 @@ WQuickCursorShapeManager::WQuickCursorShapeManager(QObject *parent):
 
 }
 
-void WQuickCursorShapeManager::create()
+WServerInterface *WQuickCursorShapeManager::create()
 {
     W_D(WQuickCursorShapeManager);
-    WQuickWaylandServerInterface::create();
 
     d->manager = QWCursorShapeManagerV1::create(server()->handle(), 1u);
     connect(d->manager, &QWCursorShapeManagerV1::requestSetShape, this,
@@ -124,6 +125,8 @@ void WQuickCursorShapeManager::create()
                 seat->cursor()->setCursorShape(wpToWCursorShape(event->shape));
         }
     });
+
+    return new WServerInterface(d->manager, d->manager->handle()->global);
 }
 
 WAYLIB_SERVER_END_NAMESPACE

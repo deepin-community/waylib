@@ -26,7 +26,7 @@ class WAYLIB_SERVER_EXPORT WXWaylandShellV1 : public WQuickWaylandServerInterfac
 {
     Q_OBJECT
     Q_PROPERTY(QW_NAMESPACE::QWXWaylandShellV1* shell READ shell NOTIFY shellChanged FINAL)
-    Q_PROPERTY(WSocket* ownsSocket READ ownsSocket CONSTANT)
+    Q_PROPERTY(WSocket* targetSocket READ targetSocket CONSTANT)
     QML_NAMED_ELEMENT(XWaylandShellV1)
 
 public:
@@ -38,7 +38,7 @@ Q_SIGNALS:
     void shellChanged();
 
 private:
-    void create() override;
+    WServerInterface *create() override;
 
     QW_NAMESPACE::QWXWaylandShellV1 *m_shell = nullptr;
 };
@@ -69,7 +69,7 @@ public:
 
     QByteArray displayName() const;
 
-    Q_INVOKABLE wl_client *client() const;
+    Q_INVOKABLE WClient *client() const;
     Q_INVOKABLE pid_t pid() const;
 
 Q_SIGNALS:
@@ -86,8 +86,7 @@ Q_SIGNALS:
 private:
     friend class XWayland;
 
-    void create() override;
-    void ownsSocketChange() override;
+    WServerInterface *create() override;
     void tryCreateXWayland();
     void onIsToplevelChanged();
     void addSurface(WXWaylandSurface *surface);
@@ -100,89 +99,6 @@ private:
     bool m_lazy = true;
     QW_NAMESPACE::QWCompositor *m_compositor = nullptr;
     WSeat *m_seat = nullptr;
-};
-
-class WQuickObserver;
-class WAYLIB_SERVER_EXPORT WXWaylandSurfaceItem : public WSurfaceItem
-{
-    Q_OBJECT
-    Q_PROPERTY(WXWaylandSurface* surface READ surface WRITE setSurface NOTIFY surfaceChanged)
-    Q_PROPERTY(WXWaylandSurfaceItem* parentSurfaceItem READ parentSurfaceItem WRITE setParentSurfaceItem NOTIFY parentSurfaceItemChanged FINAL)
-    Q_PROPERTY(QSize minimumSize READ minimumSize NOTIFY minimumSizeChanged FINAL)
-    Q_PROPERTY(QSize maximumSize READ maximumSize NOTIFY maximumSizeChanged FINAL)
-    Q_PROPERTY(PositionMode positionMode READ positionMode WRITE setPositionMode NOTIFY positionModeChanged FINAL)
-    Q_PROPERTY(QPointF positionOffset READ positionOffset WRITE setPositionOffset NOTIFY positionOffsetChanged FINAL)
-    Q_PROPERTY(bool ignoreConfigureRequest READ ignoreConfigureRequest WRITE setIgnoreConfigureRequest NOTIFY ignoreConfigureRequestChanged FINAL)
-    QML_NAMED_ELEMENT(XWaylandSurfaceItem)
-
-public:
-    enum PositionMode {
-        PositionFromSurface,
-        PositionToSurface,
-        ManualPosition
-    };
-    Q_ENUM(PositionMode)
-
-    explicit WXWaylandSurfaceItem(QQuickItem *parent = nullptr);
-    ~WXWaylandSurfaceItem();
-
-    WXWaylandSurface *surface() const;
-    void setSurface(WXWaylandSurface *surface);
-
-    WXWaylandSurfaceItem *parentSurfaceItem() const;
-    void setParentSurfaceItem(WXWaylandSurfaceItem *newParentSurfaceItem);
-
-    QSize minimumSize() const;
-    QSize maximumSize() const;
-
-    PositionMode positionMode() const;
-    void setPositionMode(PositionMode newPositionMode);
-    Q_INVOKABLE void move(PositionMode mode);
-    bool resizeSurface(const QSize &newSize) override;
-
-    QPointF positionOffset() const;
-    void setPositionOffset(QPointF newPositionOffset);
-
-    bool ignoreConfigureRequest() const;
-    void setIgnoreConfigureRequest(bool newIgnoreConfigureRequest);
-
-Q_SIGNALS:
-    void surfaceChanged();
-    void parentSurfaceItemChanged();
-    void minimumSizeChanged();
-    void maximumSizeChanged();
-    void positionModeChanged();
-    void positionOffsetChanged();
-    void ignoreConfigureRequestChanged();
-
-private:
-    Q_SLOT void onSurfaceCommit() override;
-    void initSurface() override;
-    QRectF getContentGeometry() const override;
-    QSizeF getContentSize() const override;
-    void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
-
-    inline void checkMove(PositionMode mode) {
-        if (!m_surface || mode == ManualPosition || !isVisible())
-            return;
-        doMove(mode);
-    }
-    void doMove(PositionMode mode);
-    Q_SLOT void updatePosition();
-    void configureSurface(const QRect &newGeometry);
-    // get xwayland surface's position of specified mode
-    QPoint expectSurfacePosition(PositionMode mode) const;
-    // get xwayland surface's size of specified mode
-    QSize expectSurfaceSize(ResizeMode mode) const;
-
-private:
-    QPointer<WXWaylandSurface> m_surface;
-    QPointer<WXWaylandSurfaceItem> m_parentSurfaceItem;
-    QSize m_minimumSize;
-    QSize m_maximumSize;
-    PositionMode m_positionMode = PositionFromSurface;
-    QPointF m_positionOffset;
-    bool m_ignoreConfigureRequest = false;
 };
 
 WAYLIB_SERVER_END_NAMESPACE

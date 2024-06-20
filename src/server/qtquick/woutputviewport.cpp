@@ -22,6 +22,10 @@ void WOutputViewportPrivate::init()
     QQuickItemPrivate::get(bufferRenderer)->anchors()->setFill(q);
     QObject::connect(bufferRenderer, &WBufferRenderer::cacheBufferChanged,
                      q, &WOutputViewport::cacheBufferChanged);
+    QObject::connect(bufferRenderer, &WBufferRenderer::afterRendering,
+                     q, [this] {
+        forceRender = false;
+    });
 }
 
 void WOutputViewportPrivate::initForOutput()
@@ -32,7 +36,7 @@ void WOutputViewportPrivate::initForOutput()
     bufferRenderer->setOutput(output);
     outputWindow()->attach(q);
 
-    QObject::connect(output, &WOutput::modeChanged, q, [this] {
+    output->safeConnect(&WOutput::modeChanged, q, [this] {
         updateImplicitSize();
     });
 
@@ -65,15 +69,17 @@ void WOutputViewportPrivate::updateRenderBufferSource()
 
     QList<QQuickItem*> sources;
 
-    if (root) {
-        sources.append(q);
+    if (input) {
+        sources.append(input);
     } else {
+        // the "nullptr" is on behalf of the window's contentItem
         sources.append(nullptr);
     }
 
     if (extraRenderSource)
         sources.append(extraRenderSource);
 
+    forceRender = true;
     bufferRenderer->setSourceList(sources, true);
 }
 
@@ -121,6 +127,32 @@ QSGTextureProvider *WOutputViewport::textureProvider() const
         return tp;
 
     return d->bufferRenderer->textureProvider();
+}
+
+QQuickItem *WOutputViewport::input() const
+{
+    W_DC(WOutputViewport);
+    return d->input;
+}
+
+void WOutputViewport::setInput(QQuickItem *item)
+{
+    W_D(WOutputViewport);
+    if (d->input == item)
+        return;
+
+    d->input = item;
+
+    if (d->output) {
+        d->updateRenderBufferSource();
+    }
+
+    Q_EMIT inputChanged();
+}
+
+void WOutputViewport::resetInput()
+{
+    setInput(nullptr);
 }
 
 WOutput *WOutputViewport::output() const
@@ -183,26 +215,6 @@ void WOutputViewport::setOffscreen(bool newOffscreen)
     Q_EMIT offscreenChanged();
 }
 
-bool WOutputViewport::isRoot() const
-{
-    W_DC(WOutputViewport);
-    return d->root;
-}
-
-void WOutputViewport::setRoot(bool newRoot)
-{
-    W_D(WOutputViewport);
-    if (d->root == newRoot)
-        return;
-    d->root = newRoot;
-
-    if (d->output) {
-        d->updateRenderBufferSource();
-    }
-
-    Q_EMIT rootChanged();
-}
-
 bool WOutputViewport::cacheBuffer() const
 {
     W_DC(WOutputViewport);
@@ -228,6 +240,22 @@ void WOutputViewport::setPreserveColorContents(bool newPreserveColorContents)
         return;
     d->preserveColorContents = newPreserveColorContents;
     Q_EMIT preserveColorContentsChanged();
+}
+
+bool WOutputViewport::live() const
+{
+    W_DC(WOutputViewport);
+    return d->live;
+}
+
+void WOutputViewport::setLive(bool newLive)
+{
+    W_D(WOutputViewport);
+    if (d->live == newLive)
+        return;
+
+    d->live = newLive;
+    Q_EMIT liveChanged();
 }
 
 WOutputViewport::LayerFlags WOutputViewport::layerFlags() const
@@ -257,6 +285,13 @@ void WOutputViewport::rotateOutput(WOutput::Transform t)
     W_D(WOutputViewport);
     if (auto window = d->outputWindow())
         window->rotateOutput(this, t);
+}
+
+void WOutputViewport::render(bool doCommit)
+{
+    W_D(WOutputViewport);
+    if (auto window = d->outputWindow())
+        window->render(this, doCommit);
 }
 
 void WOutputViewport::componentComplete()

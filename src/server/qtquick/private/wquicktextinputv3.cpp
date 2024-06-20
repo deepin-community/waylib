@@ -6,6 +6,7 @@
 #include "wseat.h"
 #include "wtoplevelsurface.h"
 #include "wtools.h"
+#include "private/wglobal_p.h"
 
 #include <qwcompositor.h>
 #include <qwseat.h>
@@ -41,13 +42,14 @@ WQuickTextInputManagerV3::WQuickTextInputManagerV3(QObject *parent) :
     WObject(*new WQuickTextInputManagerV3Private(this))
 { }
 
-void WQuickTextInputManagerV3::create()
+WServerInterface *WQuickTextInputManagerV3::create()
 {
     W_D(WQuickTextInputManagerV3);
-    WQuickWaylandServerInterface::create();
     d->manager = QWTextInputManagerV3::create(server()->handle());
     Q_ASSERT(d->manager);
     connect(d->manager, &QWTextInputManagerV3::textInput, this, &WQuickTextInputManagerV3::newTextInput);
+
+    return new WServerInterface(d->manager, d->manager->handle()->global);
 }
 
 class WQuickTextInputV3Private : public WQuickTextInputPrivate

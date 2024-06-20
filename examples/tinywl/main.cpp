@@ -328,7 +328,7 @@ WSurface *Helper::getFocusSurfaceFrom(QObject *object)
 
 void Helper::allowNonDrmOutputAutoChangeMode(WOutput *output)
 {
-    connect(output->handle(), &QWOutput::requestState, this, &Helper::onOutputRequeseState);
+    output->safeConnect(&QWOutput::requestState, this, &Helper::onOutputRequeseState);
 }
 
 void Helper::enableOutput(WOutput *output)
@@ -404,10 +404,8 @@ bool Helper::beforeDisposeEvent(WSeat *seat, QWindow *watched, QInputEvent *even
                 if (resizeEdgets & Qt::BottomEdge)
                     geo.setBottom(geo.bottom() + increment_pos.y());
 
-                if (surface->checkNewSize(geo.size().toSize())) {
+                if (surfaceItem->resizeSurface(geo.size().toSize()))
                     surfaceItem->setPosition(geo.topLeft());
-                    surfaceItem->resizeSurface(geo.size().toSize());
-                }
             }
 
             return true;
@@ -425,12 +423,11 @@ bool Helper::afterHandleEvent(WSeat *seat, WSurface *watched, QObject *surfaceIt
 
     if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::TouchBegin) {
         // surfaceItem is qml type: XdgSurfaceItem or LayerSurfaceItem
-        auto *toplevelSurface = qvariant_cast<WToplevelSurface*>(surfaceItem->property("surface"));
-
+        auto toplevelSurface = qobject_cast<WSurfaceItem*>(surfaceItem)->shellSurface();
         if (!toplevelSurface)
             return false;
         Q_ASSERT(toplevelSurface->surface() == watched);
-        if (auto *xdgSurface = qvariant_cast<WXdgSurface*>(surfaceItem->property("surface"))) {
+        if (auto *xdgSurface = qobject_cast<WXdgSurface *>(toplevelSurface)) {
             // TODO: popupSurface should not inherit WToplevelSurface
             if (xdgSurface->isPopup()) {
                 return false;

@@ -19,7 +19,9 @@ class WAYLIB_SERVER_EXPORT WQuickWaylandServerInterface : public QObject
     Q_DECLARE_PRIVATE(WQuickWaylandServerInterface)
     QML_NAMED_ELEMENT(WaylandServerInterface)
     Q_PROPERTY(bool polished READ isPolished NOTIFY afterPolish)
-    Q_PROPERTY(WSocket* ownsSocket READ ownsSocket WRITE setOwnsSocket NOTIFY ownsSocketChanged)
+    Q_PROPERTY(WSocket* targetSocket READ targetSocket WRITE setTargetSocket NOTIFY targetSocketChanged)
+    Q_PRIVATE_PROPERTY(WQuickWaylandServerInterface::d_func(), QQmlListProperty<WClient> targetClients READ targetClients NOTIFY targetClientsChanged DESIGNABLE false)
+    Q_PROPERTY(bool exclusionTargetClients READ exclusionTargetClients WRITE setExclusionTargetClients NOTIFY exclusionTargetClientsChanged FINAL)
 
 public:
     explicit WQuickWaylandServerInterface(QObject *parent = nullptr);
@@ -27,21 +29,28 @@ public:
     WQuickWaylandServer *server() const;
     bool isPolished() const;
 
-    WSocket *ownsSocket() const;
-    void setOwnsSocket(WSocket *socket);
+    WSocket *targetSocket() const;
+    void setTargetSocket(WSocket *socket);
+
+    bool exclusionTargetClients() const;
+    void setExclusionTargetClients(bool newExclusionTargetClients);
 
 Q_SIGNALS:
     void beforeCreate();
     void afterPolish();
-    void ownsSocketChanged();
+    void targetSocketChanged();
+    void targetClientsChanged();
+    void exclusionTargetClientsChanged();
 
 protected:
     friend class WQuickWaylandServer;
     friend class WQuickWaylandServerPrivate;
 
-    virtual void create();
+    [[nodiscard]] virtual WServerInterface *create();
     virtual void polish();
-    virtual void ownsSocketChange();
+
+    void doCreate();
+    void doPolish();
 };
 
 class WQuickWaylandServerPrivate;

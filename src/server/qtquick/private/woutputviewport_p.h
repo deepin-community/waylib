@@ -29,8 +29,9 @@ class WOutputViewportPrivate : public QQuickItemPrivate
 public:
     WOutputViewportPrivate()
         : offscreen(false)
-        , root(false)
         , preserveColorContents(false)
+        , live(true)
+        , forceRender(false)
     {
 
     }
@@ -46,6 +47,10 @@ public:
         return viewport->d_func();
     }
 
+    inline bool renderable() const {
+        return (forceRender || live) && q_func()->isVisible();
+    }
+
     void init();
     void initForOutput();
     void invalidateSceneGraph();
@@ -58,14 +63,16 @@ public:
     void setExtraRenderSource(QQuickItem *source);
 
     W_DECLARE_PUBLIC(WOutputViewport)
+    QQuickItem *input = nullptr;
     WOutput *output = nullptr;
     qreal devicePixelRatio = 1.0;
     WBufferRenderer *bufferRenderer = nullptr;
     QPointer<QQuickItem> extraRenderSource;
 
     uint offscreen:1;
-    uint root:1;
     uint preserveColorContents:1;
+    uint live:1;
+    uint forceRender:1;
     WOutputViewport::LayerFlags layerFlags;
 };
 

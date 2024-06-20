@@ -21,6 +21,7 @@ WAYLIB_SERVER_BEGIN_NAMESPACE
 class WSeat;
 class WQuickSurface;
 class WXdgSurface;
+class WToplevelSurface;
 class WQuickXdgShellPrivate;
 class WAYLIB_SERVER_EXPORT WQuickXdgShell : public WQuickWaylandServerInterface, public WObject
 {
@@ -36,49 +37,7 @@ Q_SIGNALS:
     void surfaceRemoved(WXdgSurface *surface);
 
 private:
-    void create() override;
-    void ownsSocketChange() override;
-};
-
-class WAYLIB_SERVER_EXPORT WXdgSurfaceItem : public WSurfaceItem
-{
-    Q_OBJECT
-    Q_PROPERTY(WXdgSurface* surface READ surface WRITE setSurface NOTIFY surfaceChanged)
-    Q_PROPERTY(QPointF implicitPosition READ implicitPosition NOTIFY implicitPositionChanged)
-    Q_PROPERTY(QSize minimumSize READ minimumSize NOTIFY minimumSizeChanged FINAL)
-    Q_PROPERTY(QSize maximumSize READ maximumSize NOTIFY maximumSizeChanged FINAL)
-    QML_NAMED_ELEMENT(XdgSurfaceItem)
-
-public:
-    explicit WXdgSurfaceItem(QQuickItem *parent = nullptr);
-    ~WXdgSurfaceItem();
-
-    WXdgSurface *surface() const;
-    void setSurface(WXdgSurface *surface);
-
-    QPointF implicitPosition() const;
-    QSize minimumSize() const;
-    QSize maximumSize() const;
-    bool resizeSurface(const QSize &newSize) override;
-
-Q_SIGNALS:
-    void surfaceChanged();
-    void implicitPositionChanged();
-    void minimumSizeChanged();
-    void maximumSizeChanged();
-
-private:
-    Q_SLOT void onSurfaceCommit() override;
-    void initSurface() override;
-    QRectF getContentGeometry() const override;
-
-    void setImplicitPosition(const QPointF &newImplicitPosition);
-
-private:
-    QPointer<WXdgSurface> m_surface;
-    QPointF m_implicitPosition;
-    QSize m_minimumSize;
-    QSize m_maximumSize;
+    WServerInterface *create() override;
 };
 
 WAYLIB_SERVER_END_NAMESPACE

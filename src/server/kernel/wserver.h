@@ -28,10 +28,13 @@ typedef bool (*GlobalFilterFunc)(const wl_client *client,
 
 class WServer;
 class WSocket;
-class WServerInterface : public QObject
+class WClient;
+class WServerInterface
 {
-    Q_OBJECT
 public:
+    explicit WServerInterface(void *handle, wl_global *global);
+    WServerInterface();
+
     virtual ~WServerInterface() {}
     inline void *handle() const {
         return m_handle;
@@ -49,21 +52,46 @@ public:
         return m_server;
     }
 
-    inline void setOwnsSocket(const WSocket *socket) {
-        m_ownsSocket = socket;
+    inline void setTargetSocket(const WSocket *socket, bool exclusionMode) {
+        m_targetSocket = socket;
+        m_exclusionTargetSocket = exclusionMode;
     }
-    inline const WSocket *ownsSocket() const {
-        return m_ownsSocket;
+    inline const WSocket *targetSocket() const {
+        return m_targetSocket;
+    }
+    inline bool exclusionTargetSocket() const {
+        return m_exclusionTargetSocket;
+    }
+
+    inline void setTargetClients(const QList<WClient*> &clients, bool exclusionMode) {
+        m_targetClients = clients;
+        m_exclusionTargetClients = exclusionMode;
+    }
+    inline QList<WClient*> targetClients() const {
+        return m_targetClients;
+    }
+    inline bool exclusionTargetClients() const {
+        return m_exclusionTargetClients;
     }
 
 protected:
     void *m_handle = nullptr;
+    wl_global *m_global = nullptr;
     WServer *m_server = nullptr;
-    const WSocket *m_ownsSocket = nullptr;
+    const WSocket *m_targetSocket = nullptr;
+    QList<WClient*> m_targetClients;
+    uint m_exclusionTargetSocket:1;
+    uint m_exclusionTargetClients:1;
 
-    virtual void create(WServer *server) = 0;
-    virtual void destroy(WServer *server) = 0;
-    virtual wl_global *global() const = 0;
+    virtual void create(WServer *server) {
+        Q_UNUSED(server);
+    }
+    virtual void destroy(WServer *server) {
+        Q_UNUSED(server);
+    }
+    virtual wl_global *global() const {
+        return m_global;
+    }
 
     friend class WServer;
     friend class WServerPrivate;

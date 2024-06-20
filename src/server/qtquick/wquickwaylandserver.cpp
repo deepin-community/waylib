@@ -13,9 +13,105 @@ class WQuickWaylandServerInterfacePrivate : public QObjectPrivate
 public:
     Q_DECLARE_PUBLIC(WQuickWaylandServerInterface)
 
+    void updateTargetClients();
+
+    // targetClients property
+    static void targetClients_append(QQmlListProperty<WClient> *, WClient *);
+    static qsizetype targetClients_count(QQmlListProperty<WClient> *);
+    static WClient *targetClients_at(QQmlListProperty<WClient> *, qsizetype);
+    static void targetClients_clear(QQmlListProperty<WClient> *);
+    static void targetClients_removeLast(QQmlListProperty<WClient> *);
+    static void targetClients_replace(QQmlListProperty<WClient> *, qsizetype, WClient *);
+
+    QQmlListProperty<WClient> targetClients() const;
+
     bool isPolished = false;
-    WSocket *ownsSocket = nullptr;
+    WSocket *targetSocket = nullptr;
+    QList<WClient*> m_targetClients;
+    bool exclusionTargetClients = false;
+    WServerInterface *interface = nullptr;
 };
+
+void WQuickWaylandServerInterfacePrivate::updateTargetClients()
+{
+    if (!interface)
+        return;
+    interface->setTargetClients(m_targetClients, exclusionTargetClients);
+}
+
+void WQuickWaylandServerInterfacePrivate::targetClients_append(QQmlListProperty<WClient> *prop, WClient *i)
+{
+    auto q = static_cast<WQuickWaylandServerInterface*>(prop->object);
+    auto self = q->d_func();
+
+    self->m_targetClients.append(i);
+    self->updateTargetClients();
+
+    Q_EMIT q->targetClientsChanged();
+}
+
+qsizetype WQuickWaylandServerInterfacePrivate::targetClients_count(QQmlListProperty<WClient> *prop)
+{
+    auto q = static_cast<WQuickWaylandServerInterface*>(prop->object);
+    auto self = q->d_func();
+
+    return self->m_targetClients.size();
+}
+
+WClient *WQuickWaylandServerInterfacePrivate::targetClients_at(QQmlListProperty<WClient> *prop, qsizetype index)
+{
+    auto q = static_cast<WQuickWaylandServerInterface*>(prop->object);
+    auto self = q->d_func();
+
+    return self->m_targetClients.at(index);
+}
+
+void WQuickWaylandServerInterfacePrivate::targetClients_clear(QQmlListProperty<WClient> *prop)
+{
+    auto q = static_cast<WQuickWaylandServerInterface*>(prop->object);
+    auto self = q->d_func();
+
+    if (self->m_targetClients.isEmpty())
+        return;
+
+    self->m_targetClients.clear();
+    self->updateTargetClients();
+
+    Q_EMIT q->targetClientsChanged();
+}
+
+void WQuickWaylandServerInterfacePrivate::targetClients_removeLast(QQmlListProperty<WClient> *prop)
+{
+    auto q = static_cast<WQuickWaylandServerInterface*>(prop->object);
+    auto self = q->d_func();
+
+    self->m_targetClients.removeLast();
+    self->updateTargetClients();
+
+    Q_EMIT q->targetClientsChanged();
+}
+
+void WQuickWaylandServerInterfacePrivate::targetClients_replace(QQmlListProperty<WClient> *prop, qsizetype index, WClient *client)
+{
+    auto q = static_cast<WQuickWaylandServerInterface*>(prop->object);
+    auto self = q->d_func();
+    self->m_targetClients.replace(index, client);
+
+    Q_EMIT q->targetClientsChanged();
+}
+
+QQmlListProperty<WClient> WQuickWaylandServerInterfacePrivate::targetClients() const
+{
+    QQmlListProperty<WClient> result;
+    result.object = const_cast<WQuickWaylandServerInterface*>(q_func());
+    result.append = WQuickWaylandServerInterfacePrivate::targetClients_append;
+    result.count = WQuickWaylandServerInterfacePrivate::targetClients_count;
+    result.at = WQuickWaylandServerInterfacePrivate::targetClients_at;
+    result.clear = WQuickWaylandServerInterfacePrivate::targetClients_clear;
+    result.removeLast = WQuickWaylandServerInterfacePrivate::targetClients_removeLast;
+    result.replace = WQuickWaylandServerInterfacePrivate::targetClients_replace;
+    return result;
+}
 
 class WQuickWaylandServerPrivate : public WServerPrivate
 {
@@ -59,8 +155,8 @@ void WQuickWaylandServerPrivate::interfaces_append(QQmlListProperty<WQuickWaylan
     i->setParent(q);
 
     if (self->componentComplete) {
-        i->create();
-        QMetaObject::invokeMethod(i, &WQuickWaylandServerInterface::polish, Qt::QueuedConnection);
+        i->doCreate();
+        QMetaObject::invokeMethod(i, &WQuickWaylandServerInterface::doPolish, Qt::QueuedConnection);
     }
 
     Q_EMIT q->interfacesChanged();
@@ -164,38 +260,77 @@ bool WQuickWaylandServerInterface::isPolished() const
     return d->isPolished;
 }
 
-WSocket *WQuickWaylandServerInterface::ownsSocket() const
+WSocket *WQuickWaylandServerInterface::targetSocket() const
 {
     Q_D(const WQuickWaylandServerInterface);
-    return d->ownsSocket;
+    return d->targetSocket;
 }
 
-void WQuickWaylandServerInterface::setOwnsSocket(WSocket *socket)
+void WQuickWaylandServerInterface::setTargetSocket(WSocket *socket)
 {
     Q_D(WQuickWaylandServerInterface);
-    if (d->ownsSocket == socket)
+    if (d->targetSocket == socket)
         return;
-    d->ownsSocket = socket;
-    Q_EMIT ownsSocketChanged();
+    d->targetSocket = socket;
+    Q_EMIT targetSocketChanged();
 
-    ownsSocketChange();
+    if (d->interface)
+        d->interface->setTargetSocket(socket, false);
 }
 
-void WQuickWaylandServerInterface::create()
+bool WQuickWaylandServerInterface::exclusionTargetClients() const
 {
-    Q_EMIT beforeCreate();
+    Q_D(const WQuickWaylandServerInterface);
+    return d->exclusionTargetClients;
+}
+
+void WQuickWaylandServerInterface::setExclusionTargetClients(bool newExclusionTargetClients)
+{
+    Q_D(WQuickWaylandServerInterface);
+    if (d->exclusionTargetClients == newExclusionTargetClients)
+        return;
+    d->exclusionTargetClients = newExclusionTargetClients;
+    d->updateTargetClients();
+
+    Q_EMIT exclusionTargetClientsChanged();
+}
+
+WServerInterface *WQuickWaylandServerInterface::create()
+{
+    return nullptr;
 }
 
 void WQuickWaylandServerInterface::polish()
 {
-    Q_D(WQuickWaylandServerInterface);
-    d->isPolished = true;
-    Q_EMIT afterPolish();
+
 }
 
-void WQuickWaylandServerInterface::ownsSocketChange()
+void WQuickWaylandServerInterface::doCreate()
 {
+    Q_D(WQuickWaylandServerInterface);
+    Q_ASSERT(!d->interface);
+    Q_EMIT beforeCreate();
+    d->interface = create();
 
+    if (!d->interface)
+        return;
+
+    d->interface->setTargetSocket(targetSocket(), false);
+    if (!d->m_targetClients.isEmpty())
+        d->updateTargetClients();
+
+    if (!server()->interfaceList().contains(d->interface))
+        server()->attach(d->interface);
+}
+
+void WQuickWaylandServerInterface::doPolish()
+{
+    Q_D(WQuickWaylandServerInterface);
+
+    polish();
+
+    d->isPolished = true;
+    Q_EMIT afterPolish();
 }
 
 WQuickWaylandServer::WQuickWaylandServer(QObject *parent)
@@ -216,10 +351,10 @@ void WQuickWaylandServer::componentComplete()
 
     start();
     for (auto i : d->m_interfaces)
-        i->create();
+        i->doCreate();
 
     for (auto i : d->m_interfaces)
-        i->polish();
+        i->doPolish();
 
     d->componentComplete = true;
 
