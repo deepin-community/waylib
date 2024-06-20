@@ -6,6 +6,8 @@
 #include "wseat.h"
 #include "wsurface.h"
 #include "wtools.h"
+#include "wsocket.h"
+#include "private/wglobal_p.h"
 
 #include <qwdisplay.h>
 #include <qwseat.h>
@@ -36,7 +38,7 @@ public:
     WTextInputV1 *const handle;
     wl_client *waylandClient() const override
     {
-        return handle->waylandClient();
+        return handle->waylandClient()->handle();
     }
 };
 
@@ -248,15 +250,6 @@ WQuickTextInputV1::WQuickTextInputV1(WTextInputV1 *handle, QObject *parent)
     });
     connect(d->handle, &WTextInputV1::commitState, this, &WQuickTextInput::committed);
     connect(d->handle, &WTextInputV1::beforeDestroy, this, &WQuickTextInput::entityAboutToDestroy);
-}
-
-void WQuickTextInputManagerV1::create()
-{
-    W_D(WQuickTextInputManagerV1);
-    WQuickWaylandServerInterface::create();
-    d->handle = WTextInputManagerV1::create(server()->handle());
-    Q_ASSERT(d->handle);
-    connect(d->handle, &WTextInputManagerV1::newTextInput, this, &WQuickTextInputManagerV1::newTextInput);
 }
 
 struct ws_text_input_v1 {
@@ -629,9 +622,23 @@ public:
         Q_EMIT q_func()->newTextInput(ti);
     }
 
+    static inline WTextInputManagerV1Private *get(WTextInputManagerV1 *qq) {
+        return qq->d_func();
+    }
+
     ws_text_input_manager_v1 *const handle;
     QWSignalConnector sc;
 };
+
+WServerInterface *WQuickTextInputManagerV1::create()
+{
+    W_D(WQuickTextInputManagerV1);
+    d->handle = WTextInputManagerV1::create(server()->handle());
+    Q_ASSERT(d->handle);
+    connect(d->handle, &WTextInputManagerV1::newTextInput, this, &WQuickTextInputManagerV1::newTextInput);
+
+    return new WServerInterface(d->handle, WTextInputManagerV1Private::get(d->handle)->handle->global);
+}
 
 WTextInputManagerV1::WTextInputManagerV1(ws_text_input_manager_v1 *handle)
     : QObject(nullptr)

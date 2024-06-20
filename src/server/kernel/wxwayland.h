@@ -18,7 +18,7 @@ WAYLIB_SERVER_BEGIN_NAMESPACE
 class WSeat;
 class WXWaylandSurface;
 class WXWaylandPrivate;
-class WAYLIB_SERVER_EXPORT WXWayland : public WServerInterface, public WObject
+class WAYLIB_SERVER_EXPORT WXWayland : public WServerInterface, public WWrapObject
 {
     W_DECLARE_PRIVATE(WXWayland)
 public:
@@ -53,6 +53,9 @@ public:
 
     xcb_connection_t *xcbConnection() const;
     QVector<WXWaylandSurface*> surfaceList() const;
+
+    WSocket *ownsSocket() const;
+    void setOwnsSocket(WSocket *socket);
 
 protected:
     virtual void surfaceAdded(WXWaylandSurface *surface);

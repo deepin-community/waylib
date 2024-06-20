@@ -11,6 +11,7 @@
 #include "wseat.h"
 #include "wsurface.h"
 #include "wxdgsurface.h"
+#include "private/wglobal_p.h"
 
 #include <qwcompositor.h>
 #include <qwinputmethodv2.h>
@@ -223,6 +224,8 @@ void WInputMethodHelper::setInputMethod(WQuickInputMethodV2 *im)
     W_D(WInputMethodHelper);
     if (d->activeInputMethod == im)
         return;
+    if (d->activeInputMethod)
+        d->activeInputMethod->safeDisconnect(this);
     d->activeInputMethod = im;
     Q_EMIT activeInputMethodChanged();
 }
@@ -297,12 +300,11 @@ void WInputMethodHelper::handleNewIMV2(QWInputMethodV2 *imv2)
     // Once input method is online, try to resend enter to textInput
     resendKeyboardFocus();
     // For text input v1, when after sendEnter, enabled signal will be emitted
-    connect(wimv2->handle(), &QWInputMethodV2::beforeDestroy, this, [this, wimv2]{
+    wimv2->safeConnect(&QWInputMethodV2::beforeDestroy, this, [this, wimv2]{
         if (inputMethod() == wimv2) {
             setInputMethod(nullptr);
-            wimv2->disconnect();
         }
-        wimv2->deleteLater();
+        wimv2->safeDeleteLater();
         notifyLeave();
     });
 
@@ -352,10 +354,10 @@ void WInputMethodHelper::handleNewIPSV2(QWInputPopupSurfaceV2 *ipsv2)
         d->popupSurfaces.append(surface);
         Q_EMIT inputPopupSurfaceV2Added(surface);
         updatePopupSurface(surface, cursorRect);
-        connect(popupSurface, &QWInputPopupSurfaceV2::beforeDestroy, this, [this, d, surface](){
+        surface->safeConnect(&QWInputPopupSurfaceV2::beforeDestroy, this, [this, d, surface](){
             d->popupSurfaces.removeAll(surface);
             Q_EMIT inputPopupSurfaceV2Removed(surface);
-            surface->deleteLater();
+            surface->safeDeleteLater();
         });
     };
 
@@ -397,6 +399,28 @@ QString WInputMethodHelper::seatName() const
     return wseat()->name();
 }
 
+void WInputMethodHelper::connectToTI(WQuickTextInput *ti)
+{
+    connect(ti, &WQuickTextInput::enabled, this, &WInputMethodHelper::handleTIEnabled, Qt::UniqueConnection);
+    connect(ti, &WQuickTextInput::disabled, this, &WInputMethodHelper::handleTIDisabled, Qt::UniqueConnection);
+    connect(ti, &WQuickTextInput::requestLeave, ti, &WQuickTextInput::sendLeave, Qt::UniqueConnection);
+}
+
+void WInputMethodHelper::disableTI(WQuickTextInput *ti)
+{
+    Q_ASSERT(ti);
+    W_D(WInputMethodHelper);
+    if (focusedTextInput() == ti) {
+        // Should we consider the case when the same text input is disabled and then enabled at the same time.
+        auto im = inputMethod();
+        if (im) {
+            im->sendDeactivate();
+            im->sendDone();
+        }
+        setFocusedTextInput(nullptr);
+    }
+}
+
 void WInputMethodHelper::tryAddTextInput(WQuickTextInput *ti)
 {
     W_D(WInputMethodHelper);
@@ -405,19 +429,14 @@ void WInputMethodHelper::tryAddTextInput(WQuickTextInput *ti)
     d->textInputs.append(ti);
     connect(ti, &WQuickTextInput::entityAboutToDestroy, this, [this, d, ti]{
         d->textInputs.removeAll(ti);
-        handleTIDisabled(ti);
+        disableTI(ti);
         ti->disconnect();
         ti->deleteLater();
     }); // textInputs only save and traverse text inputs, do not handle connections
-    auto connectToTI = [this](WQuickTextInput *ti) {
-        connect(ti, &WQuickTextInput::enabled, this, &WInputMethodHelper::handleTIEnabled, Qt::UniqueConnection);
-        connect(ti, &WQuickTextInput::disabled, this, [this, ti]{ handleTIDisabled(ti); }, Qt::UniqueConnection);
-        connect(ti, &WQuickTextInput::requestLeave, ti, &WQuickTextInput::sendLeave, Qt::UniqueConnection);
-    };
     // Whether this text input belongs to current seat or not, we should connect
     // its requestFocus signal for it might request focus from another seat to activate
     // itself here. For example, text input v1.
-    connect(ti, &WQuickTextInput::requestFocus, this, [this, ti, connectToTI]{
+    connect(ti, &WQuickTextInput::requestFocus, this, [this, ti]{
         if (ti->seat() && seatName() == ti->seat()->name()) {
             connectToTI(ti);
             if (seat()->keyboardFocus()) {
@@ -456,19 +475,10 @@ void WInputMethodHelper::handleTIEnabled()
     }
 }
 
-void WInputMethodHelper::handleTIDisabled(WQuickTextInput *ti)
+void WInputMethodHelper::handleTIDisabled()
 {
-    Q_ASSERT(ti);
-    W_D(WInputMethodHelper);
-    if (focusedTextInput() == ti) {
-        // Should we consider the case when the same text input is disabled and then enabled at the same time.
-        auto im = inputMethod();
-        if (im) {
-            im->sendDeactivate();
-            im->sendDone();
-        }
-        setFocusedTextInput(nullptr);
-    }
+    WQuickTextInput *ti = qobject_cast<WQuickTextInput*>(sender());
+    disableTI(ti);
 }
 
 void WInputMethodHelper::handleFocusedTICommitted()

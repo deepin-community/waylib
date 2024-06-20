@@ -4,6 +4,8 @@
 #include "wquicklayershell_p.h"
 #include "wlayersurface.h"
 #include "woutput.h"
+#include "private/wglobal_p.h"
+
 #include <qwlayershellv1.h>
 #include <qwxdgshell.h>
 
@@ -53,8 +55,8 @@ void WQuickLayerShellPrivate::onNewSurface(QWLayerSurfaceV1 *layerSurface)
     surface->setParent(server);
     Q_ASSERT(surface->parent() == server);
 
-    QObject::connect(layerSurface, &QWLayerSurfaceV1::beforeDestroy, q, [this] (QWLayerSurfaceV1 *data) {
-        onSurfaceDestroy(data);
+    surface->safeConnect(&QWLayerSurfaceV1::beforeDestroy, q, [this, layerSurface] {
+        onSurfaceDestroy(layerSurface);
     });
 
     surfaceList.append(surface);
@@ -68,7 +70,7 @@ void WQuickLayerShellPrivate::onSurfaceDestroy(QWLayerSurfaceV1 *layerSurface)
     bool ok = surfaceList.removeOne(surface);
     Q_ASSERT(ok);
     Q_EMIT q_func()->surfaceRemoved(surface);
-    surface->deleteLater();
+    surface->safeDeleteLater();
 }
 
 WQuickLayerShell::WQuickLayerShell(QObject *parent):
@@ -78,15 +80,16 @@ WQuickLayerShell::WQuickLayerShell(QObject *parent):
 
 }
 
-void WQuickLayerShell::create()
+WServerInterface *WQuickLayerShell::create()
 {
     W_D(WQuickLayerShell);
-    WQuickWaylandServerInterface::create();
 
     d->shell = QWLayerShellV1::create(server()->handle(), 4u);
     connect(d->shell, &QWLayerShellV1::newSurface, this, [d](QWLayerSurfaceV1 *surface) {
         d->onNewSurface(surface);
     });
+
+    return new WServerInterface(d->shell, d->shell->handle()->global);
 }
 
 WLayerSurfaceItem::WLayerSurfaceItem(QQuickItem *parent)
@@ -98,22 +101,6 @@ WLayerSurfaceItem::WLayerSurfaceItem(QQuickItem *parent)
 WLayerSurfaceItem::~WLayerSurfaceItem()
 {
 
-}
-
-WLayerSurface *WLayerSurfaceItem::surface() const
-{
-    return m_surface;
-}
-
-void WLayerSurfaceItem::setSurface(WLayerSurface *surface)
-{
-    if (m_surface == surface)
-        return;
-
-    m_surface = surface;
-    WSurfaceItem::setSurface(surface ? surface->surface() : nullptr);
-
-    Q_EMIT surfaceChanged();
 }
 
 inline static int32_t getValidSize(int32_t size, int32_t fallback) {
@@ -128,23 +115,14 @@ void WLayerSurfaceItem::onSurfaceCommit()
 void WLayerSurfaceItem::initSurface()
 {
     WSurfaceItem::initSurface();
-    Q_ASSERT(m_surface);
-    connect(m_surface->handle(), &QWLayerSurfaceV1::beforeDestroy,
+    Q_ASSERT(layerSurface());
+    connect(layerSurface(), &WWrapObject::aboutToBeInvalidated,
             this, &WLayerSurfaceItem::releaseResources);
-}
-
-bool WLayerSurfaceItem::resizeSurface(const QSize &newSize)
-{
-    if (!m_surface->checkNewSize(newSize))
-       return false;
-    m_surface->configureSize(newSize);
-
-    return true;
 }
 
 QRectF WLayerSurfaceItem::getContentGeometry() const
 {
-   return m_surface->getContentGeometry();
+   return layerSurface()->getContentGeometry();
 }
 
 WAYLIB_SERVER_END_NAMESPACE

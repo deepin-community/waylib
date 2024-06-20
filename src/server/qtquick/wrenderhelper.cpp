@@ -4,6 +4,7 @@
 #include "wrenderhelper.h"
 #include "wtools.h"
 #include "private/wqmlhelper_p.h"
+#include "private/wglobal_p.h"
 
 #include <qwbackend.h>
 #include <qwoutput.h>
@@ -207,9 +208,12 @@ public:
         : WObjectPrivate(qq)
         , renderer(renderer)
     {}
+    ~WRenderHelperPrivate() {
+        resetRenderBuffer();
+    }
 
     void resetRenderBuffer();
-    void onBufferDestroy(QWBuffer *buffer);
+    void onBufferDestroy();
     static bool ensureRhiRenderTarget(QQuickRenderControl *rc, BufferData *data);
 
     W_DECLARE_PUBLIC(WRenderHelper)
@@ -227,8 +231,10 @@ void WRenderHelperPrivate::resetRenderBuffer()
     buffers.clear();
 }
 
-void WRenderHelperPrivate::onBufferDestroy(QWBuffer *buffer)
+void WRenderHelperPrivate::onBufferDestroy()
 {
+    QWBuffer *buffer = qobject_cast<QWBuffer*>(q_func()->sender());
+
     for (int i = 0; i < buffers.count(); ++i) {
         auto data = buffers[i];
         if (data->buffer == buffer) {
@@ -559,8 +565,8 @@ QQuickRenderTarget WRenderHelper::acquireRenderTarget(QQuickRenderControl *rc, Q
             return {};
     }
 
-    connect(buffer, SIGNAL(beforeDestroy(QWBuffer*)),
-            this, SLOT(onBufferDestroy(QWBuffer*)), Qt::UniqueConnection);
+    connect(buffer, SIGNAL(beforeDestroy()),
+            this, SLOT(onBufferDestroy()), Qt::UniqueConnection);
 
     d->buffers.append(bufferData.release());
     d->lastBuffer = d->buffers.last();

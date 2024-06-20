@@ -53,15 +53,46 @@ extern "C" {
 QW_USE_NAMESPACE
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
+WServerInterface::WServerInterface(void *handle, wl_global *global)
+    : m_handle(handle)
+    , m_global(global)
+{
+
+}
+
+WServerInterface::WServerInterface()
+{
+
+}
+
 static bool globalFilter(const wl_client *client,
                          const wl_global *global,
                          void *data) {
     WServerPrivate *d = reinterpret_cast<WServerPrivate*>(data);
 
-    if (auto interface = d->q_func()->findInterface(global)) {
-        if (interface->ownsSocket() && WSocket::get(client) != interface->ownsSocket())
-            return false;
-    }
+    do {
+        if (auto interface = d->q_func()->findInterface(global)) {
+            auto wclient = WClient::get(client);
+            if (!wclient) {
+                auto client_cred = WClient::getCredentials(client);
+                if (client_cred->pid == getpid()) {
+                    break;
+                }
+            }
+
+            Q_ASSERT(wclient);
+            if (interface->targetSocket()
+                && (interface->exclusionTargetSocket()
+                    == bool(wclient->socket() == interface->targetSocket()))) {
+                return false;
+            }
+            if (!interface->targetClients().isEmpty()
+                && (interface->exclusionTargetClients()
+                    == interface->targetClients().contains(wclient))) {
+                return false;
+            }
+        }
+    } while(false);
 
 #ifndef DISABLE_XWAYLAND
     if (wl_global_get_interface(global)->name == QByteArrayView("xwayland_shell_v1")) {

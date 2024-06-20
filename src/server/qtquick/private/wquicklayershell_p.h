@@ -27,34 +27,24 @@ Q_SIGNALS:
     void surfaceRemoved(WLayerSurface *surface);
 
 private:
-    void create() override;
+    WServerInterface *create() override;
 };
 
 class WAYLIB_SERVER_EXPORT WLayerSurfaceItem : public WSurfaceItem
 {
     Q_OBJECT
-    Q_PROPERTY(WLayerSurface* surface READ surface WRITE setSurface NOTIFY surfaceChanged)
-
     QML_NAMED_ELEMENT(LayerSurfaceItem)
 
 public:
     explicit WLayerSurfaceItem(QQuickItem *parent = nullptr);
     ~WLayerSurfaceItem();
 
-    WLayerSurface *surface() const;
-    void setSurface(WLayerSurface *surface);
-    bool resizeSurface(const QSize &newSize) override;
-
-Q_SIGNALS:
-    void surfaceChanged();
+    inline WLayerSurface* layerSurface() const { return qobject_cast<WLayerSurface*>(shellSurface()); }
 
 private:
     Q_SLOT void onSurfaceCommit() override;
     void initSurface() override;
     QRectF getContentGeometry() const override;
-
-private:
-    QPointer<WLayerSurface> m_surface;
 };
 
 WAYLIB_SERVER_END_NAMESPACE

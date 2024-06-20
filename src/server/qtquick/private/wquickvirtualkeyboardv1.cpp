@@ -3,6 +3,7 @@
 
 #include "wquickvirtualkeyboardv1_p.h"
 #include "winputdevice.h"
+#include "private/wglobal_p.h"
 
 #include <qwvirtualkeyboardv1.h>
 
@@ -59,13 +60,14 @@ WQuickVirtualKeyboardManagerV1::WQuickVirtualKeyboardManagerV1(QObject *parent)
     , WObject(*new WQuickVirtualKeyboardManagerV1Private(this))
 {}
 
-void WQuickVirtualKeyboardManagerV1::create()
+WServerInterface *WQuickVirtualKeyboardManagerV1::create()
 {
     W_D(WQuickVirtualKeyboardManagerV1);
-    WQuickWaylandServerInterface::create();
     d->manager = QWVirtualKeyboardManagerV1::create(server()->handle());
     Q_ASSERT(d->manager);
     connect(d->manager, &QWVirtualKeyboardManagerV1::newVirtualKeyboard, this, &WQuickVirtualKeyboardManagerV1::newVirtualKeyboard);
+
+    return new WServerInterface(d->manager, d->manager->handle()->global);
 }
 
 QWVirtualKeyboardV1 *WQuickVirtualKeyboardV1::handle() const

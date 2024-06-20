@@ -167,11 +167,14 @@ Item {
         }
 
         XWayland {
+            id: xwayland
             compositor: compositor.compositor
             seat: seat0.seat
             lazy: false
 
-            onReady: masterSocket.addClient(client())
+            onReady: function () {
+                xwaylandXdgOutputManager.targetClients.push(client())
+            }
 
             onSurfaceAdded: function(surface) {
                 QmlHelper.xwaylandSurfaceManager.add({waylandSurface: surface})
@@ -183,9 +186,20 @@ Item {
             }
         }
 
+        // for the non-xwayland clients
         XdgOutputManager {
-            id: xdgOutputManager
             layout: QmlHelper.layout
+            exclusionTargetClients: true
+            targetClients: xwaylandXdgOutputManager.targetClients
+        }
+
+        // for the xwayland clients
+        XdgOutputManager {
+            id: xwaylandXdgOutputManager
+            layout: QmlHelper.layout
+            scaleOverride: 1.0
+            exclusionTargetClients: false
+            objectName: "XdgOutputManagerForXWayalnd"
         }
 
         ScreenCopyManager { }
