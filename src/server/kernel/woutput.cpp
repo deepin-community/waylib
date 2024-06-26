@@ -6,7 +6,6 @@
 #include "wcursor.h"
 #include "wseat.h"
 #include "wtools.h"
-#include "wquickgammacontrol_p.h"
 #include "platformplugin/qwlrootscreen.h"
 #include "private/wglobal_p.h"
 
@@ -435,6 +434,12 @@ QWlrootsScreen *WOutput::screen() const
 {
     W_DC(WOutput);
     return d->screen;
+}
+
+QString WOutput::name() const
+{
+    W_DC(WOutput);
+    return QString::fromUtf8(d->nativeHandle()->name);
 }
 
 bool WOutput::isEnabled() const
