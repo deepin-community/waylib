@@ -14,6 +14,7 @@
 #include <qwoutput.h>
 
 #include <QSGImageNode>
+#include <wbuffertextureprovider.h>
 
 #define protected public
 #define private public
@@ -109,7 +110,7 @@ static void applyTransform(QSGSoftwareRenderer *renderer, const QTransform &t)
     }
 }
 
-class Q_DECL_HIDDEN TextureProvider : public QSGTextureProvider
+class Q_DECL_HIDDEN TextureProvider : public WBufferTextureProvider
 {
 public:
     explicit TextureProvider(WBufferRenderer *item)
@@ -121,6 +122,14 @@ public:
 
     QSGTexture *texture() const override {
         return m_texture ? &m_texture->texture : nullptr;
+    }
+
+    QWTexture *qwTexture() const override {
+        return m_texture ? m_texture->qwtexture : nullptr;
+    }
+
+    QWBuffer *qwBuffer() const override {
+        return m_texture ? m_texture->buffer : nullptr;
     }
 
     void setBuffer(QWBuffer *buffer) {
@@ -169,6 +178,7 @@ public:
         Texture(QQuickWindow *window, QWRenderer *renderer, QWBuffer *buffer)
         {
             qwtexture = QWTexture::fromBuffer(renderer, buffer);
+            this->buffer = buffer;
             WTexture::makeTexture(qwtexture, &texture, window);
             texture.setOwnsTexture(false);
         }
@@ -178,6 +188,7 @@ public:
         }
 
         QWTexture *qwtexture;
+        QWBuffer *buffer;
         QSGPlainTexture texture;
     };
 
@@ -224,7 +235,7 @@ QList<QQuickItem*> WBufferRenderer::sourceList() const
     QList<QQuickItem*> list;
     list.reserve(m_sourceList.size());
 
-    for (const Data &i : m_sourceList)
+    for (const Data &i : std::as_const(m_sourceList))
         list.append(i.source);
 
     return list;
@@ -249,7 +260,7 @@ void WBufferRenderer::setSourceList(QList<QQuickItem*> sources, bool hideSource)
     m_sourceList.clear();
     m_hideSource = hideSource;
 
-    for (auto s : sources) {
+    for (auto s : std::as_const(sources)) {
         m_sourceList.append({s, nullptr});
 
         if (isRootItem(s))

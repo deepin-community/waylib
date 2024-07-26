@@ -128,13 +128,21 @@ void WWrapObjectPrivate::invalidate()
 
     Q_EMIT q->aboutToBeInvalidated();
 
+    auto d = QObjectPrivate::get(q);
+    if (!d->isDeletingChildren && d->declarativeData && QAbstractDeclarativeData::destroyed) {
+        QAbstractDeclarativeData::destroyed(d->declarativeData, q);
+        d->declarativeData = nullptr;
+    }
+
     instantRelease();
     for (const auto &connection : std::as_const(connectionsWithHandle)) {
         QObject::disconnect(connection);
     }
-    m_handle->disconnect(q);
+    if (m_handle) {
+        m_handle->disconnect(q);
+        m_handle = nullptr;
+    }
     connectionsWithHandle.clear();
-    m_handle = nullptr;
 
     Q_EMIT q->invalidated();
 }

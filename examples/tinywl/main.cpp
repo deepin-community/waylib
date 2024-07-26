@@ -86,6 +86,15 @@ Helper::Helper(QObject *parent)
     m_cursor->setLayout(m_outputLayout);
 }
 
+Helper::~Helper()
+{
+    for (auto info : std::as_const(m_outputExclusiveZoneInfo)) {
+        if (info.second) {
+            delete info.second;
+        }
+    }
+}
+
 void Helper::initProtocols(WOutputRenderWindow *window, QQmlEngine *qmlEngine)
 {
     auto backend = m_server->attach<WBackend>();
@@ -140,8 +149,6 @@ void Helper::initProtocols(WOutputRenderWindow *window, QQmlEngine *qmlEngine)
 
     xwaylandOutputManager->setScaleOverride(1.0);
 
-    xdgOutputManager->setTargetClients(xwaylandOutputManager->targetClients(), true);
-
     connect(xdgShell, &WXdgShell::surfaceAdded, this, [this, qmlEngine, foreignToplevel](WXdgSurface *surface) {
         auto initProperties = qmlEngine->newObject();
         initProperties.setProperty("type", surface->isPopup() ? "popup" : "toplevel");
@@ -166,10 +173,11 @@ void Helper::initProtocols(WOutputRenderWindow *window, QQmlEngine *qmlEngine)
     m_xwayland = m_server->attach<WXWayland>(m_compositor, xwayland_lazy);
     m_xwayland->setSeat(m_seat);
 
-    connect(m_xwayland, &WXWayland::ready, this, [this, xwaylandOutputManager] () {
-        auto clients = xwaylandOutputManager->targetClients();
-        clients.append(m_xwayland->waylandClient());
-        xwaylandOutputManager->setTargetClients(clients, true);
+    xdgOutputManager->setFilter([this] (WClient *client) {
+        return client != m_xwayland->waylandClient();
+    });
+    xwaylandOutputManager->setFilter([this] (WClient *client) {
+        return client == m_xwayland->waylandClient();
     });
 
     connect(m_xwayland, &WXWayland::surfaceAdded, this, [this, qmlEngine] (WXWaylandSurface *surface) {
@@ -240,7 +248,7 @@ void Helper::initProtocols(WOutputRenderWindow *window, QQmlEngine *qmlEngine)
             (QWOutputConfigurationV1 *config, bool onlyTest) {
         QList<WOutputState> states = m_wOutputManager->stateListPending();
         bool ok = true;
-        for (auto state : states) {
+        for (auto state : std::as_const(states)) {
             WOutput *output = state.output;
             output->enable(state.enabled);
             if (state.enabled) {
@@ -597,15 +605,16 @@ bool Helper::startDemoClient(const QString &socket)
 #ifdef START_DEMO
     QProcess waylandClientDemo;
 
-    waylandClientDemo.setProgram("qml");
-    waylandClientDemo.setArguments({"-a", "widget", SOURCE_DIR"/ClientWindow.qml", "-platform", "wayland"});
+    waylandClientDemo.setProgram(PROJECT_BINARY_DIR"/examples/animationclient/animationclient");
+    waylandClientDemo.setArguments({"-platform", "wayland"});
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     env.insert("WAYLAND_DISPLAY", socket);
 
     waylandClientDemo.setProcessEnvironment(env);
     return waylandClientDemo.startDetached();
-#endif
+#else
     return false;
+#endif
 }
 
 WSurface *Helper::getFocusSurfaceFrom(QObject *object)

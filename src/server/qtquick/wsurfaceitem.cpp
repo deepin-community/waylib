@@ -9,6 +9,7 @@
 #include "wcursor.h"
 #include "woutput.h"
 #include "woutputviewport.h"
+#include "wbuffertextureprovider.h"
 
 #include <qwcompositor.h>
 #include <qwsubcompositor.h>
@@ -30,7 +31,7 @@ extern "C" {
 QW_USE_NAMESPACE
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
-class WSGTextureProvider : public QSGTextureProvider
+class WSGTextureProvider : public WBufferTextureProvider
 {
     friend class WSurfaceItemContent;
 public:
@@ -39,17 +40,22 @@ public:
 
 public:
     QSGTexture *texture() const override;
+    QWTexture *qwTexture() const override;
+    QWBuffer *qwBuffer() const override;
     void updateTexture(); // in render thread
+    void tryUpdateTexture();
     void maybeUpdateTextureOnSurfacePrrimaryOutputChanged();
     void reset();
 
     QWTexture *ensureTexture();
 
 private:
+    void doUpdateTexture();
     WSurfaceItemContent *item;
     QWBuffer *buffer = nullptr;
     std::unique_ptr<QWTexture> qwtexture;
     std::unique_ptr<WTexture> dwtexture;
+    bool textureDirty = false;
 };
 
 class EventItem : public QQuickItem
@@ -211,7 +217,7 @@ public:
 
         // wayland protocol job should not run in rendering thread, so set context qobject to contentItem
         frameDoneConnection = QObject::connect(q->window(), &QQuickWindow::afterRendering, q, [this, q](){
-            if (q->rendered) {
+            if (q->rendered && live) {
                 surface->notifyFrameDone();
                 q->rendered = false;
             }
@@ -235,6 +241,7 @@ public:
     mutable WSGTextureProvider *textureProvider = nullptr;
     mutable QMetaObject::Connection updateTextureConnection;
     bool dontCacheLastBuffer = false;
+    bool live = true;
 };
 
 
@@ -291,6 +298,12 @@ QSGTextureProvider *WSurfaceItemContent::textureProvider() const
     return d->tp();
 }
 
+WBufferTextureProvider *WSurfaceItemContent::wTextureProvider() const
+{
+    W_DC(WSurfaceItemContent);
+    return d->tp();
+}
+
 bool WSurfaceItemContent::cacheLastBuffer() const
 {
     W_DC(WSurfaceItemContent);
@@ -304,6 +317,23 @@ void WSurfaceItemContent::setCacheLastBuffer(bool newCacheLastBuffer)
         return;
     d->dontCacheLastBuffer = !newCacheLastBuffer;
     Q_EMIT cacheLastBufferChanged();
+}
+
+bool WSurfaceItemContent::live() const
+{
+    W_DC(WSurfaceItemContent);
+    return d->live;
+}
+
+void WSurfaceItemContent::setLive(bool live)
+{
+    W_D(WSurfaceItemContent);
+    if (d->live == live)
+        return;
+    d->live = live;
+    if (live && d->textureProvider)
+        d->textureProvider->tryUpdateTexture();
+    Q_EMIT liveChanged();
 }
 
 void WSurfaceItemContent::componentComplete()
@@ -433,7 +463,28 @@ QSGTexture *WSGTextureProvider::texture() const
     return dwtexture->getSGTexture(item->window());
 }
 
+QWTexture *WSGTextureProvider::qwTexture() const
+{
+    if (!buffer)
+        return nullptr;
+    return qwtexture.get();
+}
+
+QWBuffer *WSGTextureProvider::qwBuffer() const
+{
+    return buffer;
+}
+
 void WSGTextureProvider::updateTexture()
+{
+    if (!item->live()) {
+        textureDirty = true;
+        return;
+    }
+    doUpdateTexture();
+}
+
+void WSGTextureProvider::doUpdateTexture()
 {
     if (qwtexture)
         qwtexture.reset();
@@ -448,6 +499,14 @@ void WSGTextureProvider::updateTexture()
     dwtexture->setHandle(ensureTexture());
     Q_EMIT textureChanged();
     item->update();
+}
+
+void WSGTextureProvider::tryUpdateTexture()
+{
+    if (textureDirty) {
+        textureDirty = false;
+        doUpdateTexture();
+    }
 }
 
 void WSGTextureProvider::maybeUpdateTextureOnSurfacePrrimaryOutputChanged()
@@ -630,7 +689,7 @@ void WSurfaceItem::setFlags(const Flags &newFlags)
     if (auto content = d->getItemContent())
         content->setCacheLastBuffer(!newFlags.testFlag(DontCacheLastBuffer));
 
-    for (auto sub : d->subsurfaces)
+    for (auto sub : std::as_const(d->subsurfaces))
         sub->setFlags(newFlags);
 
     Q_EMIT flagsChanged();
@@ -694,7 +753,7 @@ void WSurfaceItem::setDelegate(QQmlComponent *newDelegate)
     d->delegate = newDelegate;
     d->initForDelegate();
 
-    for (auto sub : d->subsurfaces)
+    for (auto sub : std::as_const(d->subsurfaces))
         sub->setDelegate(newDelegate);
 
     Q_EMIT delegateChanged();
@@ -833,7 +892,7 @@ void WSurfaceItem::releaseResources()
     }
 
     if (!d->surfaceFlags.testFlag(DontCacheLastBuffer)) {
-        for (auto item : d->subsurfaces) {
+        for (auto item : std::as_const(d->subsurfaces)) {
             item->releaseResources();
             // subsurface's contents at the last frame buffer.
             // AutoDestroy: disconnects (subsurfaceItem.surface, destroyed, this, lambda{deleteLater})
@@ -842,7 +901,7 @@ void WSurfaceItem::releaseResources()
             item->setProperty("_autoDestroyReleased", true);
         }
     } else {
-        for (auto item : d->subsurfaces)
+        for (auto item : std::as_const(d->subsurfaces))
             item->deleteLater();
     }
 
@@ -998,7 +1057,7 @@ void WSurfaceItemPrivate::initForSurface()
 
     // clean subsurfaces, if cacheLastBuffer is enabled will cache
     // the previous WSurface's subsurfaces.
-    for (auto item : subsurfaces)
+    for (auto item : std::as_const(subsurfaces))
         item->deleteLater();
     subsurfaces.clear();
 

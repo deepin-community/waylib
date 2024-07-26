@@ -35,7 +35,7 @@ WQuickOutputLayout::WQuickOutputLayout(QObject *parent)
 
 }
 
-QList<WOutputItem*> WQuickOutputLayout::outputs() const
+const QList<WOutputItem*> &WQuickOutputLayout::outputs() const
 {
     W_DC(WQuickOutputLayout);
     return d->outputs;
@@ -76,7 +76,6 @@ void WQuickOutputLayout::remove(WOutputItem *output)
 
     if (auto o = output->output()) {
         remove(o);
-        o->setLayout(nullptr);
     }
 
     Q_EMIT outputsChanged();

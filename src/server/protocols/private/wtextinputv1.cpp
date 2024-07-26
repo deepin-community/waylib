@@ -102,7 +102,7 @@ IME::ContentHints WTextInputV1::contentHints() const
     };
     auto convertToHints = [](WTextInputV1::ContentHints hints) -> IME::ContentHints {
         IME::ContentHints result;
-        for (auto hint : hintsMap) {
+        for (auto hint : std::as_const(hintsMap)) {
             result.setFlag(hint.second, hints.testFlag(hint.first));
         }
         return result;
@@ -466,7 +466,7 @@ void WTextInputManagerV1::destroy(WServer *server)
     Q_UNUSED(server);
     W_D(WTextInputManagerV1);
     wl_global_destroy(m_global);
-    for (auto textInput : d->textInputs) {
+    for (auto textInput : std::as_const(d->textInputs)) {
         wl_resource_destroy(textInput->d_func()->resource);
     }
 }
@@ -475,6 +475,11 @@ WTextInputManagerV1::WTextInputManagerV1(QObject *parent)
     : QObject(parent)
     , WObject(*new WTextInputManagerV1Private(this))
 { }
+
+QByteArrayView WTextInputManagerV1::interfaceName() const
+{
+    return zwp_text_input_manager_v1_interface.name;
+}
 
 CHECK_ENUM(WTextInputV1::CH_None, ZWP_TEXT_INPUT_V1_CONTENT_HINT_NONE);
 CHECK_ENUM(WTextInputV1::CH_Default, ZWP_TEXT_INPUT_V1_CONTENT_HINT_DEFAULT);
