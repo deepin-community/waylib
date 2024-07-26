@@ -41,6 +41,12 @@ WTextInputManagerV3::WTextInputManagerV3(QObject *parent)
     , WObject(*new WTextInputManagerV3Private(this))
 { }
 
+
+QByteArrayView WTextInputManagerV3::interfaceName() const
+{
+    return "zwp_text_input_manager_v3";
+}
+
 void WTextInputManagerV3::create(WServer *server)
 {
     W_D(WTextInputManagerV3);
@@ -61,11 +67,16 @@ void WTextInputManagerV3::create(WServer *server)
 
 void WTextInputManagerV3::destroy(WServer *server)
 {
-    for (auto ti : d_func()->textInputs) {
+    for (auto ti : std::as_const(d_func()->textInputs)) {
         Q_EMIT ti->entityAboutToDestroy();
         ti->deleteLater();
     }
     d_func()->textInputs.clear();
+}
+
+wl_global *WTextInputManagerV3::global() const
+{
+    return nativeInterface<QWTextInputManagerV3>()->handle()->global;
 }
 
 class WTextInputV3Private : public WTextInputPrivate

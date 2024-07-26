@@ -217,6 +217,11 @@ void WXWayland::setOwnsSocket(WSocket *socket)
     d->socket->setParentSocket(socket);
 }
 
+QByteArrayView WXWayland::interfaceName() const
+{
+    return "xwayland_shell_v1";
+}
+
 void WXWayland::addSurface(WXWaylandSurface *surface)
 {
     surface->safeConnect(&WXWaylandSurface::isToplevelChanged,
@@ -292,7 +297,7 @@ void WXWayland::destroy(WServer *server)
     auto list = d->surfaceList;
     d->surfaceList.clear();
 
-    for (auto surface : list) {
+    for (auto surface : std::as_const(list)) {
         removeSurface(surface);
         surface->safeDeleteLater();
     }

@@ -84,6 +84,11 @@ QVector<WLayerSurface*> WLayerShell::surfaceList() const
     return d->surfaceList;
 }
 
+QByteArrayView WLayerShell::interfaceName() const
+{
+    return "zwlr_layer_shell_v1";
+}
+
 void WLayerShell::create(WServer *server)
 {
     W_D(WLayerShell);
@@ -103,7 +108,7 @@ void WLayerShell::destroy(WServer *server)
     auto list = d->surfaceList;
     d->surfaceList.clear();
 
-    for (auto surface : list) {
+    for (auto surface : std::as_const(list)) {
         surfaceRemoved(surface);
         surface->safeDeleteLater();
     }

@@ -158,7 +158,8 @@ void WXdgDecorationManager::setPreferredMode(DecorationMode mode)
         return;
     }
     // update all existing decoration that mode changed
-    for (auto *surface : d->decorations.keys()) {
+    const auto keys = d->decorations.keys();
+    for (auto *surface : keys) {
         setModeBySurface(surface, mode);
     }
     d->preferredMode = mode;
@@ -200,6 +201,11 @@ WXdgDecorationManager::DecorationMode WXdgDecorationManager::modeBySurface(WSurf
 {
     W_DC(WXdgDecorationManager);
     return d->modeBySurface(surface);
+}
+
+QByteArrayView WXdgDecorationManager::interfaceName() const
+{
+    return "zxdg_decoration_manager_v1";
 }
 
 WAYLIB_SERVER_END_NAMESPACE

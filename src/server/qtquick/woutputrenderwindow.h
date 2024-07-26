@@ -49,6 +49,8 @@ public:
     qreal height() const;
     WBufferRenderer *currentRenderer() const;
 
+    static QList<QPointer<QQuickItem>> paintOrderItemList(QQuickItem *root, std::function<bool(QQuickItem*)> filter);
+
 public Q_SLOTS:
     void render();
     void render(WOutputViewport *output, bool doCommit);

@@ -74,7 +74,7 @@ qreal QWlrootsScreen::refreshRate() const
 {
     if (!handle()->current_mode)
         return 60;
-    return handle()->current_mode->refresh;
+    return handle()->current_mode->refresh / 1000.f;
 }
 
 QDpi QWlrootsScreen::logicalBaseDpi() const
@@ -120,7 +120,7 @@ QWindow *QWlrootsScreen::topLevelAt(const QPoint &) const
 QList<QPlatformScreen *> QWlrootsScreen::virtualSiblings() const
 {
     QList<QPlatformScreen*> siblings;
-    for (auto s : QWlrootsIntegration::instance()->m_screens) {
+    for (auto s : std::as_const(QWlrootsIntegration::instance()->m_screens)) {
         if (s != this)
             siblings.append(s);
     }

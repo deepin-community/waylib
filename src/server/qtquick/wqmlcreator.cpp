@@ -159,8 +159,11 @@ void WQmlCreatorComponent::destroy(QSharedPointer<WQmlCreatorDelegateData> data)
         Q_EMIT objectRemoved(obj, p);
         notifyCreatorObjectRemoved(creator(), obj, p);
 
-        if (m_autoDestroy)
-            obj->deleteLater();
+        if (m_autoDestroy) {
+            obj->setParent(nullptr);
+            delete obj;
+            obj = nullptr;
+        }
     }
 }
 
@@ -372,7 +375,7 @@ WQmlCreator::~WQmlCreator()
     }
 }
 
-QList<WAbstractCreatorComponent*> WQmlCreator::delegates() const
+const QList<WAbstractCreatorComponent*> &WQmlCreator::delegates() const
 {
     W_DC(WQmlCreator);
     return d->delegates;
@@ -397,7 +400,7 @@ void WQmlCreator::add(QObject *owner, const QJSValue &initialProperties)
 
     W_D(WQmlCreator);
 
-    for (auto delegate : d->delegates) {
+    for (auto delegate : std::as_const(d->delegates)) {
         if (auto d = delegate->add(data.toWeakRef()))
             data->delegateDatas.append({delegate, d});
     }
@@ -474,7 +477,7 @@ QObject *WQmlCreator::getIf(QJSValue function) const
 {
     W_DC(WQmlCreator);
 
-    for (auto delegate : d->delegates) {
+    for (auto delegate : std::as_const(d->delegates)) {
         auto obj = getIf(delegate, function);
         if (obj)
             return obj;
@@ -491,7 +494,7 @@ QObject *WQmlCreator::getByOwner(QObject *owner) const
 {
     W_DC(WQmlCreator);
 
-    for (auto delegate : d->delegates) {
+    for (auto delegate : std::as_const(d->delegates)) {
         auto obj = getByOwner(delegate, owner);
         if (obj)
             return obj;
@@ -511,7 +514,7 @@ void WQmlCreator::destroy(QSharedPointer<WQmlCreatorData> data)
 
     W_D(WQmlCreator);
 
-    for (auto delegate : d->delegates)
+    for (auto delegate : std::as_const(d->delegates))
         delegate->remove(data);
 }
 
@@ -579,7 +582,8 @@ void WQmlCreator::removeDelegate(WAbstractCreatorComponent *delegate)
     bool ok = d->delegates.removeOne(delegate);
     Q_ASSERT(ok);
 
-    for (auto d : delegate->datas()) {
+    const auto datas = delegate->datas();
+    for (auto d : datas) {
         bool ok = d->data.lock()->delegateDatas.removeOne({delegate, d});
         Q_ASSERT(ok);
     }

@@ -8,6 +8,10 @@
 
 #include <QLoggingCategory>
 
+extern "C" {
+#include <wlr/types/wlr_virtual_keyboard_v1.h>
+}
+
 QW_USE_NAMESPACE
 WAYLIB_SERVER_BEGIN_NAMESPACE
 Q_DECLARE_LOGGING_CATEGORY(qLcInputMethod)
@@ -25,6 +29,11 @@ WVirtualKeyboardManagerV1::WVirtualKeyboardManagerV1(QObject *parent)
     : WObject(*new WVirtualKeyboardManagerV1Private(this))
 {}
 
+QByteArrayView WVirtualKeyboardManagerV1::interfaceName() const
+{
+    return "zwp_virtual_keyboard_manager_v1";
+}
+
 void WVirtualKeyboardManagerV1::create(WServer *server)
 {
     W_D(WVirtualKeyboardManagerV1);
@@ -33,4 +42,10 @@ void WVirtualKeyboardManagerV1::create(WServer *server)
     m_handle = manager;
     connect(manager, &QWVirtualKeyboardManagerV1::newVirtualKeyboard, this, &WVirtualKeyboardManagerV1::newVirtualKeyboard);
 }
+
+wl_global *WVirtualKeyboardManagerV1::global() const
+{
+    return nativeInterface<QWVirtualKeyboardManagerV1>()->handle()->global;
+}
+
 WAYLIB_SERVER_END_NAMESPACE

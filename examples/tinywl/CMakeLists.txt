@@ -10,7 +10,7 @@ if(POLICY CMP0071)
     cmake_policy(SET CMP0071 NEW)
 endif()
 
-set(QML_IMPORT_PATH ${CMAKE_BINARY_DIR}/src/server/ CACHE STRING "" FORCE)
+set(QML_IMPORT_PATH "${PROJECT_BINARY_DIR}/src/server;${QML_IMPORT_PATH}" CACHE STRING "For LSP" FORCE)
 option(START_DEMO "Start demo when boot" ON)
 
 find_package(PkgConfig REQUIRED)
@@ -33,7 +33,6 @@ qt_add_qml_module(tinywl-qtquick
         helper.h
     QML_FILES
         Main.qml
-        ClientWindow.qml
         StackWorkspace.qml
         XdgSurface.qml
         LayerSurface.qml
@@ -50,7 +49,7 @@ qt_add_qml_module(tinywl-qtquick
 
 target_compile_definitions(tinywl-qtquick
     PRIVATE
-    SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    PROJECT_BINARY_DIR="${PROJECT_BINARY_DIR}"
     $<$<BOOL:${START_DEMO}>:START_DEMO>
     WLR_USE_UNSTABLE
 )

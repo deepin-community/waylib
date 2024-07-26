@@ -29,8 +29,8 @@ public:
     WForeignToplevelPrivate(WForeignToplevel *qq)
         : WObjectPrivate(qq) {}
     ~WForeignToplevelPrivate() {
-        for (auto pair : connections) {
-            for (auto co : pair.second) {
+        for (auto pair : std::as_const(connections)) {
+            for (auto co : std::as_const(pair.second)) {
                 QObject::disconnect(co);
             }
         }
@@ -140,7 +140,7 @@ public:
     void remove(WXdgSurface *surface) {
         Q_ASSERT(connections.count(surface));
 
-        for (auto co : connections[surface]) {
+        for (auto co : std::as_const(connections[surface])) {
             QObject::disconnect(co);
         }
 
@@ -185,6 +185,11 @@ void WForeignToplevel::removeSurface(WXdgSurface *surface)
     d->remove(surface);
 }
 
+QByteArrayView WForeignToplevel::interfaceName() const
+{
+    return "zwlr_foreign_toplevel_manager_v1";
+}
+
 void WForeignToplevel::create(WServer *server) {
     W_D(WForeignToplevel);
 
@@ -193,6 +198,11 @@ void WForeignToplevel::create(WServer *server) {
 
 void WForeignToplevel::destroy(WServer *server) {
 
+}
+
+wl_global *WForeignToplevel::global() const
+{
+    return nativeInterface<QWForeignToplevelManagerV1>()->handle()->global;
 }
 
 WAYLIB_SERVER_END_NAMESPACE

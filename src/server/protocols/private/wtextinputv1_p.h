@@ -10,7 +10,6 @@
 #include <qwglobal.h>
 
 #include <QObject>
-#include <QQmlEngine>
 #include <QRect>
 
 extern "C" {
@@ -155,14 +154,21 @@ class WTextInputManagerV1 : public QObject, public WObject, public WServerInterf
 public:
     explicit WTextInputManagerV1(QObject *parent = nullptr);
 
+    QByteArrayView interfaceName() const override;
+
 Q_SIGNALS:
     void newTextInput(WTextInputV1 *textInput);
 
 protected:
     void create(WServer *server) override;
     void destroy(WServer *server) override;
+    wl_global *global() const override {
+        return m_global;
+    }
 
 private:
     friend void text_input_manager_get_text_input(wl_client *client, wl_resource *resource, uint32_t id);
+
+    wl_global *m_global = nullptr;
 };
 WAYLIB_SERVER_END_NAMESPACE

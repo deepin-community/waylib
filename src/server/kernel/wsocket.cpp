@@ -189,7 +189,7 @@ void WSocketPrivate::shutdown()
     if (!freezeClientWhenDisable)
         return;
 
-    for (auto client : clients) {
+    for (auto client : std::as_const(clients)) {
         client->freeze();
     }
 }
@@ -199,7 +199,7 @@ void WSocketPrivate::restore()
     if (!freezeClientWhenDisable)
         return;
 
-    for (auto client : clients) {
+    for (auto client : std::as_const(clients)) {
         client->activate();
     }
 }
@@ -400,7 +400,7 @@ void WSocket::close()
     }
 
     if (!d->clients.isEmpty()) {
-        for (auto client : d->clients)
+        for (auto client : std::as_const(d->clients))
             delete client;
 
         d->clients.clear();
@@ -657,7 +657,7 @@ WClient *WSocket::addClient(wl_client *client)
     W_D(WSocket);
 
     WClient *wclient = nullptr;
-    if (wclient = WClient::get(client)) {
+    if ((wclient = WClient::get(client))) {
         if (wclient->socket() != this)
             return nullptr;
         if (d->clients.contains(wclient))
@@ -694,7 +694,7 @@ bool WSocket::removeClient(WClient *client)
     return true;
 }
 
-QList<WClient *> WSocket::clients() const
+const QList<WClient *> &WSocket::clients() const
 {
     W_DC(WSocket);
     return d->clients;

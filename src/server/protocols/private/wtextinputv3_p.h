@@ -118,12 +118,15 @@ class WAYLIB_SERVER_EXPORT WTextInputManagerV3 : public QObject, public WObject,
 public:
     explicit WTextInputManagerV3(QObject *parent = nullptr);
 
+    QByteArrayView interfaceName() const override;
+
 Q_SIGNALS:
     void newTextInput(WTextInputV3 *textInput);
 
 private:
     void create(WServer *server) override;
     void destroy(WServer *server) override;
+    wl_global *global() const override;
 };
 Q_DECLARE_OPERATORS_FOR_FLAGS(WTextInputV3::ContentHints)
 Q_DECLARE_OPERATORS_FOR_FLAGS(WTextInputV3::Features)

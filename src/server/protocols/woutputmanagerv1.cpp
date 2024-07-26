@@ -84,7 +84,7 @@ void WOutputManagerV1Private::outputMgrApplyOrTest(QWOutputConfigurationV1 *conf
     Q_EMIT q->requestTestOrApply(config, onlyTest);
 }
 
-QList<WOutputState> WOutputManagerV1::stateListPending()
+const QList<WOutputState> &WOutputManagerV1::stateListPending()
 {
     W_D(WOutputManagerV1);
     return d->stateListPending;
@@ -96,7 +96,7 @@ void WOutputManagerV1::updateConfig()
 
     auto *config = QWOutputConfigurationV1::create();
 
-    for (const WOutputState &state : d->stateList) {
+    for (const WOutputState &state : std::as_const(d->stateList)) {
         auto *configHead = QWOutputConfigurationHeadV1::create(config, state.output->handle());
         configHead->handle()->state.scale = state.scale;
         configHead->handle()->state.transform = static_cast<wl_output_transform>(state.transform);
@@ -160,6 +160,11 @@ void WOutputManagerV1::removeOutput(WOutput *output)
 QWOutputManagerV1 *WOutputManagerV1::handle() const
 {
     return nativeInterface<QWOutputManagerV1>();
+}
+
+QByteArrayView WOutputManagerV1::interfaceName() const
+{
+    return "zwlr_output_head_v1";
 }
 
 void WOutputManagerV1::create(WServer *server)

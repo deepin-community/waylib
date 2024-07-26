@@ -50,12 +50,13 @@ class WAYLIB_SERVER_EXPORT WOutputManagerV1: public QObject, public WObject,  pu
 public:
     explicit WOutputManagerV1();
 
-    QList<WOutputState> stateListPending();
+    const QList<WOutputState> &stateListPending();
 
     void sendResult(QW_NAMESPACE::QWOutputConfigurationV1 *config, bool ok);
     void newOutput(WOutput *output);
     void removeOutput(WOutput *output);
     QW_NAMESPACE::QWOutputManagerV1 *handle() const;
+    QByteArrayView interfaceName() const override;
 
 Q_SIGNALS:
     void requestTestOrApply(QW_NAMESPACE::QWOutputConfigurationV1 *config, bool onlyTest);
