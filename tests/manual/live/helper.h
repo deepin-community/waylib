@@ -14,21 +14,21 @@ class WServer;
 class WSocket;
 class WOutputRenderWindow;
 class WQuickOutputLayout;
-class WQuickCursor;
+class WCursor;
 class WSeat;
 class WBackend;
 WAYLIB_SERVER_END_NAMESPACE
 
 QW_BEGIN_NAMESPACE
-class QWRenderer;
-class QWAllocator;
-class QWCompositor;
+class qw_renderer;
+class qw_allocator;
+class qw_compositor;
 QW_END_NAMESPACE
 
 WAYLIB_SERVER_USE_NAMESPACE
 QW_USE_NAMESPACE
 
-class Helper : public QObject
+class Q_DECL_HIDDEN Helper : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(WQmlCreator* outputCreator MEMBER m_outputCreator CONSTANT)
@@ -51,11 +51,11 @@ private:
     WQmlCreator *m_xdgShellCreator = nullptr;
 
     WBackend *m_backend = nullptr;
-    QWRenderer *m_renderer = nullptr;
-    QWAllocator *m_allocator = nullptr;
-    QWCompositor *m_compositor = nullptr;
+    qw_renderer *m_renderer = nullptr;
+    qw_allocator *m_allocator = nullptr;
+    qw_compositor *m_compositor = nullptr;
     WQuickOutputLayout *m_outputLayout = nullptr;
-    WQuickCursor *m_cursor = nullptr;
+    WCursor *m_cursor = nullptr;
     QPointer<WSeat> m_seat;
     WSocket *m_socket = nullptr;
 };

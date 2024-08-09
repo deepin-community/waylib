@@ -16,10 +16,6 @@ extern "C" {
 #include <wayland-server.h>
 }
 
-QW_BEGIN_NAMESPACE
-class QWDisplay;
-QW_END_NAMESPACE
-
 WAYLIB_SERVER_BEGIN_NAMESPACE
 class WSurface;
 class WSeat;
@@ -32,7 +28,7 @@ class WTextInputV1;
 class WTextInputManagerV1;
 class WTextInputV1Private;
 class WTextInputManagerV1Private;
-class WTextInputV1 : public WTextInput
+class WAYLIB_SERVER_EXPORT WTextInputV1 : public WTextInput
 {
     Q_OBJECT
     W_DECLARE_PRIVATE(WTextInputV1)
@@ -146,7 +142,7 @@ private:
     friend class WTextInputManagerV1;
 };
 
-class WTextInputManagerV1 : public QObject, public WObject, public WServerInterface
+class WAYLIB_SERVER_EXPORT WTextInputManagerV1 : public QObject, public WObject, public WServerInterface
 {
     Q_OBJECT
     W_DECLARE_PRIVATE(WTextInputManagerV1)

@@ -16,7 +16,6 @@
 #include <qwoutput.h>
 #include <qwrenderer.h>
 #include <qwinputdevice.h>
-#include <qwdisplay.h>
 
 #include <QOffscreenSurface>
 #include <QGuiApplication>
@@ -50,18 +49,12 @@ extern "C" {
 
 #endif // QT_NO_OPENGL
 
-extern "C" {
-#include <wlr/types/wlr_output.h>
-#include <wlr/types/wlr_input_device.h>
-#include <wlr/types/wlr_tablet_pad.h>
-}
-
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
 #define CALL_PROXY2(FunName, fallbackValue, ...) m_proxyIntegration ? m_proxyIntegration->FunName(__VA_ARGS__) : fallbackValue
 #define CALL_PROXY(FunName, ...) CALL_PROXY2(FunName, QPlatformIntegration::FunName(__VA_ARGS__), __VA_ARGS__)
 
-class OffscreenSurface : public QPlatformOffscreenSurface
+class Q_DECL_HIDDEN OffscreenSurface : public QPlatformOffscreenSurface
 {
 public:
     OffscreenSurface(QOffscreenSurface *surface)
@@ -410,7 +403,7 @@ QAbstractEventDispatcher *QWlrootsIntegration::createEventDispatcher() const
 
 QPlatformNativeInterface *QWlrootsIntegration::nativeInterface() const
 {
-    return CALL_PROXY(nativeInterface);
+    return CALL_PROXY2(nativeInterface, const_cast<QWlrootsIntegration*>(this));
 }
 
 QPlatformPixmap *QWlrootsIntegration::createPlatformPixmap(QPlatformPixmap::PixelType type) const
@@ -540,8 +533,17 @@ void QWlrootsIntegration::quit() const
     CALL_PROXY(quit);
 }
 
+void *QWlrootsIntegration::nativeResourceForScreen(const QByteArray &resource, QScreen *screen)
+{
+    if (resource == QByteArrayView("antialiasingEnabled")) {
+        return reinterpret_cast<void*>(0x1);
+    }
+
+    return QPlatformNativeInterface::nativeResourceForScreen(resource, screen);
+}
+
 #if QT_CONFIG(vulkan)
-class VulkanInstance : public QBasicPlatformVulkanInstance
+class Q_DECL_HIDDEN VulkanInstance : public QBasicPlatformVulkanInstance
 {
 public:
     VulkanInstance(QVulkanInstance *instance)

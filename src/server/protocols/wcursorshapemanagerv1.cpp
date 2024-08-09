@@ -8,19 +8,15 @@
 
 #include <qwcursorshapev1.h>
 #include <qwseat.h>
-
-extern "C" {
-#include <wlr/types/wlr_cursor_shape_v1.h>
-#include <wlr/types/wlr_seat.h>
-}
+#include <qwdisplay.h>
 
 #define CURSOR_SHAPE_MANAGER_V1_VERSION 1
 
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
-using QW_NAMESPACE::QWCursorShapeManagerV1;
+using QW_NAMESPACE::qw_cursor_shape_manager_v1;
 
-class WCursorShapeManagerV1Private : public WObjectPrivate
+class Q_DECL_HIDDEN WCursorShapeManagerV1Private : public WObjectPrivate
 {
 public:
     WCursorShapeManagerV1Private(WCursorShapeManagerV1 *qq)
@@ -29,8 +25,8 @@ public:
 
     }
 
-    inline QWCursorShapeManagerV1 *handle() const {
-        return q_func()->nativeInterface<QWCursorShapeManagerV1>();
+    inline qw_cursor_shape_manager_v1 *handle() const {
+        return q_func()->nativeInterface<qw_cursor_shape_manager_v1>();
     }
 
     inline wlr_cursor_shape_manager_v1 *nativeHandle() const {
@@ -44,75 +40,75 @@ public:
 static inline auto wpToWCursorShape(wp_cursor_shape_device_v1_shape shape) {
     switch (shape) {
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT:
-        return WCursor::Default;
+        return WGlobal::CursorShape::Default;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_CONTEXT_MENU:
-        return WCursor::ContextMenu;
+        return WGlobal::CursorShape::ContextMenu;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_HELP:
-        return WCursor::Help;
+        return WGlobal::CursorShape::Help;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER:
-        return WCursor::Pointer;
+        return WGlobal::CursorShape::Pointer;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_PROGRESS:
-        return WCursor::Progress;
+        return WGlobal::CursorShape::Progress;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_WAIT:
-        return WCursor::Wait;
+        return WGlobal::CursorShape::Wait;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_CELL:
-        return WCursor::Cell;
+        return WGlobal::CursorShape::Cell;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_CROSSHAIR:
-        return WCursor::Crosshair;
+        return WGlobal::CursorShape::Crosshair;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_TEXT:
-        return WCursor::Text;
+        return WGlobal::CursorShape::Text;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_VERTICAL_TEXT:
-        return WCursor::VerticalText;
+        return WGlobal::CursorShape::VerticalText;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_ALIAS:
-        return WCursor::Alias;
+        return WGlobal::CursorShape::Alias;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_COPY:
-        return WCursor::Copy;
+        return WGlobal::CursorShape::Copy;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_MOVE:
-        return WCursor::Move;
+        return WGlobal::CursorShape::Move;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_NO_DROP:
-        return WCursor::NoDrop;
+        return WGlobal::CursorShape::NoDrop;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_NOT_ALLOWED:
-        return WCursor::NotAllowed;
+        return WGlobal::CursorShape::NotAllowed;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB:
-        return WCursor::Grab;
+        return WGlobal::CursorShape::Grab;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRABBING:
-        return WCursor::Grabbing;
+        return WGlobal::CursorShape::Grabbing;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_E_RESIZE:
-        return WCursor::EResize;
+        return WGlobal::CursorShape::EResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_N_RESIZE:
-        return WCursor::NResize;
+        return WGlobal::CursorShape::NResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_NE_RESIZE:
-        return WCursor::NEResize;
+        return WGlobal::CursorShape::NEResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_NW_RESIZE:
-        return WCursor::NWResize;
+        return WGlobal::CursorShape::NWResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_S_RESIZE:
-        return WCursor::SResize;
+        return WGlobal::CursorShape::SResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_SE_RESIZE:
-        return WCursor::SEResize;
+        return WGlobal::CursorShape::SEResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_SW_RESIZE:
-        return WCursor::SWResize;
+        return WGlobal::CursorShape::SWResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_W_RESIZE:
-        return WCursor::WResize;
+        return WGlobal::CursorShape::WResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_EW_RESIZE:
-        return WCursor::EWResize;
+        return WGlobal::CursorShape::EWResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_NS_RESIZE:
-        return WCursor::NSResize;
+        return WGlobal::CursorShape::NSResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_NESW_RESIZE:
-        return WCursor::NESWResize;
+        return WGlobal::CursorShape::NESWResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_NWSE_RESIZE:
-        return WCursor::NWSEResize;
+        return WGlobal::CursorShape::NWSEResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_COL_RESIZE:
-        return WCursor::ColResize;
+        return WGlobal::CursorShape::ColResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_ROW_RESIZE:
-        return WCursor::RowResize;
+        return WGlobal::CursorShape::RowResize;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_ALL_SCROLL:
-        return WCursor::AllScroll;
+        return WGlobal::CursorShape::AllScroll;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_ZOOM_IN:
-        return WCursor::ZoomIn;
+        return WGlobal::CursorShape::ZoomIn;
     case WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_ZOOM_OUT:
-        return WCursor::ZoomOut;
+        return WGlobal::CursorShape::ZoomOut;
     }
-    return WCursor::Invalid;
+    return WGlobal::CursorShape::Invalid;
 }
 
 WCursorShapeManagerV1::WCursorShapeManagerV1()
@@ -121,9 +117,9 @@ WCursorShapeManagerV1::WCursorShapeManagerV1()
 
 }
 
-QWCursorShapeManagerV1 *WCursorShapeManagerV1::handle() const
+qw_cursor_shape_manager_v1 *WCursorShapeManagerV1::handle() const
 {
-    return nativeInterface<QWCursorShapeManagerV1>();
+    return nativeInterface<qw_cursor_shape_manager_v1>();
 }
 
 QByteArrayView WCursorShapeManagerV1::interfaceName() const
@@ -136,12 +132,11 @@ void WCursorShapeManagerV1::create(WServer *server)
     W_D(WCursorShapeManagerV1);
 
     if (!m_handle) {
-        m_handle = QWCursorShapeManagerV1::create(server->handle(), CURSOR_SHAPE_MANAGER_V1_VERSION);
-        QObject::connect(handle(), &QWCursorShapeManagerV1::requestSetShape, this, [this]
+        m_handle = qw_cursor_shape_manager_v1::create(*server->handle(), CURSOR_SHAPE_MANAGER_V1_VERSION);
+        QObject::connect(handle(), &qw_cursor_shape_manager_v1::notify_request_set_shape, this, [this]
                          (wlr_cursor_shape_manager_v1_request_set_shape_event *event) {
-            if (auto *seat = WSeat::fromHandle(QW_NAMESPACE::QWSeat::from(event->seat_client->seat))) {
-                if (seat->cursor())
-                    seat->cursor()->setCursorShape(wpToWCursorShape(event->shape));
+            if (auto *seat = WSeat::fromHandle(QW_NAMESPACE::qw_seat::from(event->seat_client->seat))) {
+                seat->setCursorShape(event->seat_client, wpToWCursorShape(event->shape));
             }
         });
     }

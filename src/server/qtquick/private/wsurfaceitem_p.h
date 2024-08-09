@@ -13,13 +13,13 @@
 
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
-struct SurfaceState {
+struct Q_DECL_HIDDEN SurfaceState {
     QRectF contentGeometry;
     QSizeF contentSize;
     qreal bufferScale = 1.0;
 };
 
-class WSurfaceItemPrivate : public QQuickItemPrivate
+class Q_DECL_HIDDEN WSurfaceItemPrivate : public QQuickItemPrivate
 {
 public:
     WSurfaceItemPrivate();
@@ -65,6 +65,7 @@ public:
     std::unique_ptr<SurfaceState> surfaceState;
     QQuickItem *contentContainer = nullptr;
     QQmlComponent *delegate = nullptr;
+    bool delegateIsDirty = false;
     QQuickItem *eventItem = nullptr;
     WSurfaceItem::ResizeMode resizeMode = WSurfaceItem::SizeFromSurface;
     WSurfaceItem::Flags surfaceFlags;

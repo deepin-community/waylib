@@ -22,9 +22,8 @@ class QSGRenderContext;
 QT_END_NAMESPACE
 
 QW_BEGIN_NAMESPACE
-class QWBuffer;
-class QWTexture;
-class QWSwapchain;
+class qw_buffer;
+class qw_swapchain;
 QW_END_NAMESPACE
 
 struct pixman_region32;
@@ -45,6 +44,7 @@ public:
         DontConfigureSwapchain = 1,
         DontTestSwapchain = 2,
         RedirectOpenGLContextDefaultFrameBufferObject = 4,
+        UseCursorFormats = 8,
     };
     Q_DECLARE_FLAGS(RenderFlags, RenderFlag)
 
@@ -61,16 +61,25 @@ public:
     bool cacheBuffer() const;
     void setCacheBuffer(bool newCacheBuffer);
 
+    void lockCacheBuffer(QObject *owner);
+    void unlockCacheBuffer(QObject *owner);
+
+    QColor clearColor() const;
+    void setClearColor(const QColor &clearColor);
+
     QSGRenderer *currentRenderer() const;
     const QMatrix4x4 &currentWorldTransform() const;
-    QW_NAMESPACE::QWBuffer *currentBuffer() const;
-    QW_NAMESPACE::QWBuffer *lastBuffer() const;
+    QW_NAMESPACE::qw_buffer *currentBuffer() const;
+    QW_NAMESPACE::qw_buffer *lastBuffer() const;
     QRhiTexture *currentRenderTarget() const;
-    const QW_NAMESPACE::QWDamageRing *damageRing() const;
-    QW_NAMESPACE::QWDamageRing *damageRing();
+    const QW_NAMESPACE::qw_damage_ring *damageRing() const;
+    QW_NAMESPACE::qw_damage_ring *damageRing();
 
     bool isTextureProvider() const override;
     QSGTextureProvider *textureProvider() const override;
+
+    static QTransform inputMapToOutput(const QRectF &sourceRect, const QRectF &targetRect,
+                                       const QSize &pixelSize, const qreal devicePixelRatio);
 
 Q_SIGNALS:
     void sceneGraphChanged();
@@ -80,9 +89,11 @@ Q_SIGNALS:
     void afterRendering();
 
 protected:
-    QW_NAMESPACE::QWBuffer *beginRender(const QSize &pixelSize, qreal devicePixelRatio,
+    QW_NAMESPACE::qw_buffer *beginRender(const QSize &pixelSize, qreal devicePixelRatio,
                                         uint32_t format, RenderFlags flags = {});
-    void render(int sourceIndex, const QMatrix4x4 &renderMatrix, bool preserveColorContents = false);
+    void render(int sourceIndex, const QMatrix4x4 &renderMatrix,
+                const QRectF &sourceRect = {}, const QRectF &targetRect = {},
+                bool preserveColorContents = false);
     void endRender();
     void componentComplete() override;
 
@@ -92,16 +103,16 @@ private:
     }
 
     inline bool shouldCacheBuffer() const {
-        return m_cacheBuffer || m_forceCacheBuffer;
+        return m_cacheBuffer || !m_cacheBufferLocker.isEmpty();
     }
 
-    void setForceCacheBuffer(bool force);
     void resetTextureProvider();
     void updateTextureProvider();
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *data) override;
 
     Q_SLOT void invalidateSceneGraph();
     void releaseResources() override;
+    void cleanTextureProvider();
 
     inline bool isRootItem(const QQuickItem *source) const {
         return nullptr == source;
@@ -112,9 +123,9 @@ private:
     int indexOfSource(QQuickItem *item);
     QSGRenderer *ensureRenderer(int sourceIndex, QSGRenderContext *rc);
 
-    QW_NAMESPACE::QWSwapchain *m_swapchain = nullptr;
+    QW_NAMESPACE::qw_swapchain *m_swapchain = nullptr;
     WRenderHelper *m_renderHelper = nullptr;
-    QPointer<QW_NAMESPACE::QWBuffer> m_lastBuffer;
+    QPointer<QW_NAMESPACE::qw_buffer> m_lastBuffer;
 
     struct RenderState {
         RenderFlags flags;
@@ -124,8 +135,8 @@ private:
         QSize pixelSize;
         qreal devicePixelRatio;
         int bufferAge;
-        std::pair<QW_NAMESPACE::QWBuffer*, QQuickRenderTarget> lastRT;
-        QW_NAMESPACE::QWBuffer *buffer = nullptr;
+        std::pair<QW_NAMESPACE::qw_buffer*, QQuickRenderTarget> lastRT;
+        QW_NAMESPACE::qw_buffer *buffer = nullptr;
         QQuickRenderTarget renderTarget;
         QSGRenderTarget sgRenderTarget;
     } state;
@@ -138,11 +149,12 @@ private:
     };
 
     QList<Data> m_sourceList;
-    QW_NAMESPACE::QWDamageRing m_damageRing;
+    QW_NAMESPACE::qw_damage_ring m_damageRing;
     std::unique_ptr<TextureProvider> m_textureProvider;
+    QColor m_clearColor = Qt::transparent;
+    QList<QObject*> m_cacheBufferLocker;
 
     uint m_cacheBuffer:1;
-    uint m_forceCacheBuffer:1;
     uint m_hideSource:1;
 };
 

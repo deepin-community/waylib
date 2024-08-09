@@ -6,6 +6,7 @@
 #include "private/wglobal_p.h"
 
 #include <private/qobject_p_p.h>
+#include <QCursor>
 #include <QLoggingCategory>
 
 #ifdef QT_DEBUG
@@ -104,7 +105,7 @@ WWrapObjectPrivate::~WWrapObjectPrivate()
     Q_ASSERT(invalidated);
 }
 
-void WWrapObjectPrivate::initHandle(QW_NAMESPACE::QWWrapObject *handle)
+void WWrapObjectPrivate::initHandle(QW_NAMESPACE::qw_object_basic *handle)
 {
     Q_ASSERT(!m_handle);
     Q_ASSERT(!invalidated);
@@ -192,7 +193,7 @@ void WWrapObject::safeDeleteLater()
     deleteLater();
 }
 
-QW_NAMESPACE::QWWrapObject *WWrapObject::handle() const
+QW_NAMESPACE::qw_object_basic *WWrapObject::handle() const
 {
     W_DC(WWrapObject);
     return d->m_handle;
@@ -210,7 +211,7 @@ void WWrapObject::invalidate()
     d->invalidate();
 }
 
-void WWrapObject::initHandle(QW_NAMESPACE::QWWrapObject *handle)
+void WWrapObject::initHandle(QW_NAMESPACE::qw_object_basic *handle)
 {
     W_D(WWrapObject);
     d->initHandle(handle);
@@ -238,5 +239,15 @@ bool WWrapObject::event(QEvent *event)
     return QObject::event(event);
 }
 #endif
+
+bool WGlobal::isInvalidCursor(const QCursor &c)
+{
+    return static_cast<CursorShape>(c.shape()) == CursorShape::Invalid;
+}
+
+bool WGlobal::isClientResourceCursor(const QCursor &c)
+{
+    return static_cast<CursorShape>(c.shape()) == CursorShape::ClientResource;
+}
 
 WAYLIB_SERVER_END_NAMESPACE

@@ -18,16 +18,10 @@
 #include <QQuickWindow>
 #include <QProcess>
 
-extern "C" {
-#define static
-#include <wlr/types/wlr_output.h>
-#undef static
-}
-
 WAYLIB_SERVER_USE_NAMESPACE
 QW_USE_NAMESPACE
 
-class Helper : public QObject
+class Q_DECL_HIDDEN Helper : public QObject
 {
     Q_OBJECT
 public:
@@ -47,7 +41,7 @@ public:
 };
 
 int main(int argc, char *argv[]) {
-    QWLog::init();
+    qw_log::init();
     WServer::initializeQPA();
 //    QQuickStyle::setStyle("Material");
 

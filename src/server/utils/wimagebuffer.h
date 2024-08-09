@@ -7,20 +7,16 @@
 #include <qwbufferinterface.h>
 #include <QImage>
 
-extern "C" {
-#include <wlr/types/wlr_buffer.h>
-}
-
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
-class WImageBufferImpl : public QW_NAMESPACE::QWBufferInterface
+class WAYLIB_SERVER_EXPORT WImageBufferImpl : public QW_NAMESPACE::qw_buffer_interface
 {
 public:
     WImageBufferImpl(const QImage &bufferImage);
     ~WImageBufferImpl();
 
-    bool beginDataPtrAccess(uint32_t flags, void **data, uint32_t *format, size_t *stride) override;
-    void endDataPtrAccess() override;
+    QW_INTERFACE(begin_data_ptr_access, bool, uint32_t flags, void **data, uint32_t *format, size_t *stride);
+    QW_INTERFACE(end_data_ptr_access, void);
 
 private:
     QImage image;

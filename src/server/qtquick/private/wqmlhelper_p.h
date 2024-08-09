@@ -18,7 +18,7 @@ QT_END_NAMESPACE
 
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
-class WImageRenderTarget : public QPaintDevice
+class WAYLIB_SERVER_EXPORT WImageRenderTarget : public QPaintDevice
 {
 public:
     explicit WImageRenderTarget();
@@ -80,8 +80,10 @@ public:
 
 public Q_SLOTS:
     void itemStackToTop(QQuickItem *item);
-    void setCursorShape(QQuickItem *item, WCursor::CursorShape shape);
+    void setCursorShape(QQuickItem *item, WGlobal::CursorShape shape);
     Qt::Edges getEdges(const QRectF &rect, const QPointF &pos, qreal edgeSize);
+
+    QSizeF scaleSize(const QSizeF &from, const QSizeF &to, Qt::AspectRatioMode mode);
 };
 
 WAYLIB_SERVER_END_NAMESPACE

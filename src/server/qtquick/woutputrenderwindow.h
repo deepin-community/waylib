@@ -24,6 +24,7 @@ class WAYLIB_SERVER_EXPORT WOutputRenderWindow : public QQuickWindow, public QQm
     Q_DECLARE_PRIVATE(WOutputRenderWindow)
     Q_PROPERTY(qreal width READ width WRITE setWidth NOTIFY widthChanged)
     Q_PROPERTY(qreal height READ height WRITE setHeight NOTIFY heightChanged)
+    Q_PROPERTY(bool disableLayers READ disableLayers WRITE setDisableLayers NOTIFY disableLayersChanged FINAL)
     QML_NAMED_ELEMENT(OutputRenderWindow)
     Q_INTERFACES(QQmlParserStatus)
 
@@ -37,13 +38,17 @@ public:
     void detach(WOutputViewport *output);
 
     void attach(WOutputLayer *layer, WOutputViewport *output);
+    void attach(WOutputLayer *layer, WOutputViewport *output,
+                WOutputViewport *mapFrom, QQuickItem *mapTo);
     void detach(WOutputLayer *layer, WOutputViewport *output);
 
     void setOutputScale(WOutputViewport *output, float scale);
     void rotateOutput(WOutputViewport *output, WOutput::Transform t);
     void setOutputEnabled(WOutputViewport *output, bool enabled);
 
-    void init(QW_NAMESPACE::QWRenderer *renderer, QW_NAMESPACE::QWAllocator *allocator);
+    void init(QW_NAMESPACE::qw_renderer *renderer, QW_NAMESPACE::qw_allocator *allocator);
+    QW_NAMESPACE::qw_renderer *renderer() const;
+    QW_NAMESPACE::qw_allocator *allocator() const;
 
     qreal width() const;
     qreal height() const;
@@ -51,11 +56,15 @@ public:
 
     static QList<QPointer<QQuickItem>> paintOrderItemList(QQuickItem *root, std::function<bool(QQuickItem*)> filter);
 
+    bool disableLayers() const;
+    void setDisableLayers(bool newDisableLayers);
+
 public Q_SLOTS:
     void render();
     void render(WOutputViewport *output, bool doCommit);
     void scheduleRender();
     void update();
+    void update(WOutputViewport *output);
     void setWidth(qreal arg);
     void setHeight(qreal arg);
 
@@ -63,12 +72,18 @@ Q_SIGNALS:
     void widthChanged();
     void heightChanged();
     void outputViewportInitialized(WAYLIB_SERVER_NAMESPACE::WOutputViewport *output);
+    void initialized();
+    void disableLayersChanged();
 
 private:
     void classBegin() override;
     void componentComplete() override;
 
     bool event(QEvent *event) override;
+
+    friend class WOutputViewport;
+    QList<WOutputLayer*> layers(const WOutputViewport *output) const;
+    QList<WOutputLayer*> hardwareLayers(const WOutputViewport *output) const;
 };
 
 WAYLIB_SERVER_END_NAMESPACE

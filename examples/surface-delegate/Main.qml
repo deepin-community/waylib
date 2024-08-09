@@ -116,23 +116,22 @@ Item {
                     output: waylandOutput
                     devicePixelRatio: waylandOutput.scale
                     layout: outputLayout
-                    cursorDelegate: Item {
-                        required property OutputCursor cursor
+                    cursorDelegate: Cursor {
+                        id: cursorItem
 
-                        visible: cursor.visible && !cursor.isHardwareCursor
-                        width: cursor.size.width
-                        height: cursor.size.height
+                        required property QtObject outputCurosr
+                        readonly property point position: parent.mapFromGlobal(cursor.position.x, cursor.position.y)
 
-                        Image {
-                            id: cursorImage
-                            source: cursor.imageSource
-                            x: -cursor.hotspot.x
-                            y: -cursor.hotspot.y
-                            cache: false
-                            width: cursor.size.width
-                            height: cursor.size.height
-                            sourceClipRect: cursor.sourceRect
-                        }
+                        cursor: outputCurosr.cursor
+                        output: outputCurosr.output.output
+                        x: position.x - hotSpot.x
+                        y: position.y - hotSpot.y
+                        visible: valid && outputCurosr.visible
+                        OutputLayer.enabled: true
+                        OutputLayer.keepLayer: true
+                        OutputLayer.flags: OutputLayer.Cursor
+                        OutputLayer.cursorHotSpot: hotSpot
+                        OutputLayer.outputs: [outputViewport]
                     }
 
                     OutputViewport {

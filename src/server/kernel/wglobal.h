@@ -5,6 +5,7 @@
 
 #include <qwconfig.h>
 #include <qtguiglobal.h>
+#include <QtQmlIntegration>
 
 #define SERVER_NAMESPACE Server
 #define WAYLIB_SERVER_NAMESPACE Waylib::SERVER_NAMESPACE
@@ -48,6 +49,7 @@
 #endif
 
 #include <qwglobal.h>
+#include <qwobject.h>
 #include <QScopedPointer>
 #include <QList>
 #include <QObject>
@@ -120,7 +122,7 @@ class WAYLIB_SERVER_EXPORT WWrapObject : public QObject,  public WObject
     Q_OBJECT
 
 public:
-    QW_NAMESPACE::QWWrapObject *handle() const;
+    QW_NAMESPACE::qw_object_basic *handle() const;
     bool isInvalidated() const;
 
     bool safeDisconnect(const QObject *receiver);
@@ -141,7 +143,7 @@ public:
     }
 
     template<typename Func1, typename Func2>
-    typename std::enable_if<std::is_base_of<QW_NAMESPACE::QWWrapObject, typename QtPrivate::FunctionPointer<Func1>::Object>::value, QMetaObject::Connection>::type
+    typename std::enable_if<std::is_base_of<QW_NAMESPACE::qw_object_basic, typename QtPrivate::FunctionPointer<Func1>::Object>::value, QMetaObject::Connection>::type
     safeConnect(Func1 signal, const QObject *receiver, Func2 slot, Qt::ConnectionType type = Qt::AutoConnection) {
         // Isn't thread safety
         Q_ASSERT(QThread::currentThread() == thread());
@@ -172,7 +174,7 @@ protected:
     using QObject::deleteLater;
 
     void invalidate();
-    void initHandle(QW_NAMESPACE::QWWrapObject *handle);
+    void initHandle(QW_NAMESPACE::qw_object_basic *handle);
 
     void beginSafeConnect();
     void endSafeConnect(const QMetaObject::Connection &connection);
@@ -182,6 +184,68 @@ protected:
 #endif
 
     W_DECLARE_PRIVATE(WWrapObject)
+};
+
+class WAYLIB_SERVER_EXPORT WGlobal {
+    Q_GADGET
+    QML_NAMED_ELEMENT(Waylib)
+    QML_UNCREATABLE("Use for enums")
+
+public:
+    enum class CursorShape {
+        Default = Qt::CustomCursor + 1,
+        Invalid,
+        ClientResource,
+        BottomLeftCorner,
+        BottomRightCorner,
+        TopLeftCorner,
+        TopRightCorner,
+        BottomSide,
+        LeftSide,
+        RightSide,
+        TopSide,
+        Grabbing,
+        Xterm,
+        Hand1,
+        Watch,
+        SWResize,
+        SEResize,
+        SResize,
+        WResize,
+        EResize,
+        EWResize,
+        NWResize,
+        NWSEResize,
+        NEResize,
+        NESWResize,
+        NSResize,
+        NResize,
+        AllScroll,
+        Text,
+        Pointer,
+        Wait,
+        ContextMenu,
+        Help,
+        Progress,
+        Cell,
+        Crosshair,
+        VerticalText,
+        Alias,
+        Copy,
+        Move,
+        NoDrop,
+        NotAllowed,
+        Grab,
+        ColResize,
+        RowResize,
+        ZoomIn,
+        ZoomOut
+    };
+    Q_ENUM(CursorShape)
+    static_assert(CursorShape::BottomLeftCorner > CursorShape::Default, "");
+
+    static bool isInvalidCursor(const QCursor &c);
+    static bool isClientResourceCursor(const QCursor &c);
 };
 
 WAYLIB_SERVER_END_NAMESPACE

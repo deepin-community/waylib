@@ -5,18 +5,16 @@
 
 #include <WServer>
 
-#include <QObject>
+#include <qwbackend.h>
 
-QW_BEGIN_NAMESPACE
-class QWBackend;
-QW_END_NAMESPACE
+#include <QObject>
 
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
 class WOutput;
 class WInputDevice;
 class WBackendPrivate;
-class WBackend : public QObject, public WObject,  public WServerInterface
+class WAYLIB_SERVER_EXPORT WBackend : public QObject, public WObject,  public WServerInterface
 {
     Q_OBJECT
     friend class WOutputPrivate;
@@ -25,7 +23,7 @@ class WBackend : public QObject, public WObject,  public WServerInterface
 public:
     explicit WBackend();
 
-    QW_NAMESPACE::QWBackend *handle() const;
+    QW_NAMESPACE::qw_backend *handle() const;
 
     QVector<WOutput*> outputList() const;
     QVector<WInputDevice*> inputDeviceList() const;
