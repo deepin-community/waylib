@@ -155,6 +155,12 @@ public:
         handle()->pointer_notify_frame();
     }
     inline bool doEnter(WSurface *surface, QObject *eventObject, const QPointF &position) {
+        // doEnter be called from QEvent::HoverEnter is normal,
+        // but doNotifyMotion will call doEnter too,
+        // so should compare pointerFocusEventObject and eventObject early
+        if (pointerFocusEventObject == eventObject) {
+            return true;
+        }
         auto tmp = oldPointerFocusSurface;
         oldPointerFocusSurface = handle()->handle()->pointer_state.focused_surface;
         handle()->pointer_notify_enter(surface->handle()->handle(), position.x(), position.y());
@@ -424,12 +430,13 @@ void WSeatPrivate::on_request_set_cursor(wlr_seat_pointer_request_set_cursor_eve
             cursorSurface = new WSurface(surface, q);
             QObject::connect(surface, &qw_surface::before_destroy,
                              cursorSurface, &WSurface::safeDeleteLater);
+        } else {
+            cursorSurface.clear();
         }
         cursorSurfaceHotspot.rx() = event->hotspot_x;
         cursorSurfaceHotspot.ry() = event->hotspot_y;
 
-        if (cursorSurface)
-            Q_EMIT q->requestCursorSurface(cursorSurface, cursorSurfaceHotspot);
+        Q_EMIT q->requestCursorSurface(cursorSurface, cursorSurfaceHotspot);
     }
 }
 
@@ -829,6 +836,10 @@ bool WSeat::sendEvent(WSurface *target, QObject *shellObject, QObject *eventObje
     case QEvent::MouseMove: {
         auto e = static_cast<QMouseEvent*>(event);
         Q_ASSERT(e->source() == Qt::MouseEventNotSynthesized);
+        // received HoverEnter event of next eventObject before HoverLeave event of last eventObject,
+        // so we should check the eventObject is still the same, if not, we should ignore this event
+        if (d->pointerFocusEventObject != eventObject)
+            break;
         d->doNotifyMotion(target, eventObject, e->position(), e->timestamp());
         break;
     }
