@@ -15,7 +15,7 @@ class QProcess;
 QT_END_NAMESPACE
 
 QW_BEGIN_NAMESPACE
-class QWDisplay;
+class qw_display;
 QW_END_NAMESPACE
 
 struct wl_global;
@@ -29,7 +29,7 @@ typedef bool (*GlobalFilterFunc)(const wl_client *client,
 class WServer;
 class WSocket;
 class WClient;
-class WServerInterface
+class WAYLIB_SERVER_EXPORT WServerInterface
 {
 public:
     virtual ~WServerInterface() {}
@@ -78,7 +78,7 @@ protected:
 
 class WSocket;
 class WServerPrivate;
-class WServer : public QObject, public WObject
+class WAYLIB_SERVER_EXPORT WServer : public QObject, public WObject
 {
     Q_OBJECT
     W_DECLARE_PRIVATE(WServer)
@@ -87,7 +87,7 @@ class WServer : public QObject, public WObject
 public:
     explicit WServer(QObject *parent = nullptr);
 
-    QW_NAMESPACE::QWDisplay *handle() const;
+    QW_NAMESPACE::qw_display *handle() const;
 
     void attach(WServerInterface *interface);
     template<typename Interface, typename... Args>

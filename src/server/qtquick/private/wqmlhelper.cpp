@@ -75,7 +75,7 @@ void WQmlHelper::itemStackToTop(QQuickItem *item)
     item->stackAfter(children.last());
 }
 
-void WQmlHelper::setCursorShape(QQuickItem *item, WCursor::CursorShape shape)
+void WQmlHelper::setCursorShape(QQuickItem *item, WGlobal::CursorShape shape)
 {
     item->setCursor(WCursor::toQCursor(shape));
 }
@@ -108,6 +108,11 @@ Qt::Edges WQmlHelper::getEdges(const QRectF &rect, const QPointF &pos, qreal edg
         return Qt::BottomEdge;
 
     return Qt::Edges::fromInt(0);
+}
+
+QSizeF WQmlHelper::scaleSize(const QSizeF &from, const QSizeF &to, Qt::AspectRatioMode mode)
+{
+    return from.scaled(to, mode);
 }
 
 QSGRootNode *WQmlHelper::getRootNode(QQuickItem *item)

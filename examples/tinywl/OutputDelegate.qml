@@ -10,38 +10,52 @@ OutputItem {
     id: rootOutputItem
     required property WaylandOutput waylandOutput
     property OutputViewport onscreenViewport: outputViewport
-    property Cursor waylandCursor
+    property Cursor lastActiveCursorItem
 
     output: waylandOutput
     devicePixelRatio: waylandOutput.scale
 
-    cursorDelegate: Item {
-        required property OutputCursor cursor
+    cursorDelegate: Cursor {
+        id: cursorItem
 
-        visible: cursor.visible
-        width: cursor.size.width
-        height: cursor.size.height
+        required property QtObject outputCurosr
+        readonly property point position: parent.mapFromGlobal(cursor.position.x, cursor.position.y)
+
+        cursor: outputCurosr.cursor
+        output: outputCurosr.output.output
+        x: position.x - hotSpot.x
+        y: position.y - hotSpot.y
+        visible: valid && outputCurosr.visible
         OutputLayer.enabled: true
+        OutputLayer.keepLayer: true
         OutputLayer.outputs: [onscreenViewport]
+        OutputLayer.flags: OutputLayer.Cursor
+        OutputLayer.cursorHotSpot: hotSpot
 
-        Image {
-            id: cursorImage
-            visible: !cursor.isHardwareCursor
-            source: cursor.imageSource
-            x: -cursor.hotspot.x
-            y: -cursor.hotspot.y
-            cache: false
-            width: cursor.size.width
-            height: cursor.size.height
-            sourceClipRect: cursor.sourceRect
+        function updateActiveCursor() {
+            if (cursorItems.size === 1) {
+                lastActiveCursorItem = this;
+                return;
+            }
+
+            const pos = onscreenViewport.mapToOutput(this, Qt.point(0, 0));
+            if (pos.x >= 0 && pos.x < onscreenViewport.width
+                    && pos.y >= 0 && pos.y < onscreenViewport.height) {
+                lastActiveCursorItem = this;
+            }
         }
+
+        onXChanged: updateActiveCursor()
+        onYChanged: updateActiveCursor()
 
         SurfaceItem {
             id: dragIcon
-            z: cursorImage.z - 1
+            parent: cursorItem.parent
+            z: cursorItem.z - 1
             flags: SurfaceItem.DontCacheLastBuffer
-            visible: waylandCursor.dragSurface !== null
-            surface: waylandCursor.dragSurface
+            surface: cursorItem.cursor.requestedDragSurface
+            x: cursorItem.position.x
+            y: cursorItem.position.y
         }
     }
 
@@ -110,7 +124,8 @@ OutputItem {
             input: this
             output: waylandOutput
             devicePixelRatio: outputViewport.devicePixelRatio
-            layerFlags: OutputViewport.AlwaysAccepted
+            anchors.fill: outputViewport
+            rotation: outputViewport.rotation
 
             TextureProxy {
                 sourceItem: outputViewport
@@ -173,6 +188,20 @@ OutputItem {
         }
     }
 
+    Text {
+        anchors.bottom: parent.bottom
+        text: {
+            if (!lastActiveCursorItem)
+                return "";
+            let layer = lastActiveCursorItem.OutputLayer;
+            return layer.inOutputsByHardware.includes(onscreenViewport)
+                    ? "Hardware Cursor"
+                    : "Software Cursor";
+        }
+        color: "red"
+        font.pointSize: 20
+    }
+
     Column {
         anchors {
             bottom: parent.bottom
@@ -207,6 +236,15 @@ OutputItem {
             checked: true
             onCheckedChanged: {
                 Helper.setSocketEnabled(checked)
+            }
+        }
+
+        Switch {
+            text: "Hardware Cursor"
+            checkable: false
+            checked: !onscreenViewport.disableHardwareLayers
+            onClicked: {
+                onscreenViewport.disableHardwareLayers = !onscreenViewport.disableHardwareLayers
             }
         }
 

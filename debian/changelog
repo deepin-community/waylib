@@ -1,3 +1,9 @@
+waylib (0.2.0-alpha2+git+20240808-deepin) unstable; urgency=medium
+
+  * Sync upstream code
+
+  -- Dingyuan Zhang <zhangdingyuan@uniontech.com>  Thu, 08 Aug 2024 10:42:06 +0800
+
 waylib (0.2.0-alpha2+git+20240726-deepin) unstable; urgency=medium
 
  * Sync upstream code

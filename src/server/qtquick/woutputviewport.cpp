@@ -4,12 +4,14 @@
 #include "woutputviewport.h"
 #include "woutputviewport_p.h"
 #include "woutput.h"
+#include "wbuffertextureprovider.h"
+#include "wbufferrenderer_p.h"
 
 #include <qwbuffer.h>
 #include <qwswapchain.h>
 
 #include <QDebug>
-#include <wbuffertextureprovider.h>
+#include <private/qquickitem_p.h>
 
 QW_USE_NAMESPACE
 WAYLIB_SERVER_BEGIN_NAMESPACE
@@ -35,13 +37,26 @@ void WOutputViewportPrivate::initForOutput()
 
     updateRenderBufferSource();
     bufferRenderer->setOutput(output);
-    outputWindow()->attach(q);
+    if (window) {
+        outputWindow()->attach(q);
+        attached = true;
+    }
 
     output->safeConnect(&WOutput::modeChanged, q, [this] {
         updateImplicitSize();
     });
 
     updateImplicitSize();
+}
+
+void WOutputViewportPrivate::update()
+{
+    if (Q_UNLIKELY(!componentComplete || !output))
+        return;
+
+    auto window = outputWindow();
+    if (Q_LIKELY(window))
+        window->update(q_func());
 }
 
 qreal WOutputViewportPrivate::getImplicitWidth() const
@@ -56,12 +71,7 @@ qreal WOutputViewportPrivate::getImplicitHeight() const
 
 void WOutputViewportPrivate::updateImplicitSize()
 {
-    implicitWidthChanged();
-    implicitHeightChanged();
-
-    W_Q(WOutputViewport);
-    q->resetWidth();
-    q->resetHeight();
+    q_func()->setImplicitSize(getImplicitWidth(), getImplicitHeight());
 }
 
 void WOutputViewportPrivate::updateRenderBufferSource()
@@ -109,6 +119,7 @@ void WOutputViewport::invalidate()
     if (d->componentComplete && d->output && d->window) {
         d->outputWindow()->detach(this);
         d->output = nullptr;
+        d->attached = false;
     }
 }
 
@@ -186,6 +197,22 @@ void WOutputViewport::setOutput(WOutput *newOutput)
             d->initForOutput();
     }
     Q_EMIT outputChanged();
+}
+
+QQuickTransform *WOutputViewport::viewportTransform() const
+{
+    W_DC(WOutputViewport);
+    return d->viewportTransform;
+}
+
+void WOutputViewport::setViewportTransform(QQuickTransform *newViewportTransform)
+{
+    W_D(WOutputViewport);
+    if (d->viewportTransform == newViewportTransform)
+        return;
+    d->viewportTransform = newViewportTransform;
+    d->update();
+    Q_EMIT viewportTransformChanged();
 }
 
 qreal WOutputViewport::devicePixelRatio() const
@@ -266,19 +293,198 @@ void WOutputViewport::setLive(bool newLive)
     Q_EMIT liveChanged();
 }
 
-WOutputViewport::LayerFlags WOutputViewport::layerFlags() const
+QRectF WOutputViewport::effectiveSourceRect() const
 {
-    W_DC(WOutputViewport);
-    return d->layerFlags;
+    const auto s = sourceRect();
+    if (s.isValid())
+        return s;
+    if (ignoreViewport())
+        return {};
+    return QRectF(QPointF(0, 0), size());
 }
 
-void WOutputViewport::setLayerFlags(const LayerFlags &newLayerFlags)
+QRectF WOutputViewport::sourceRect() const
+{
+    W_DC(WOutputViewport);
+    return d->sourceRect;
+}
+
+void WOutputViewport::setSourceRect(const QRectF &newSourceRect)
 {
     W_D(WOutputViewport);
-    if (d->layerFlags == newLayerFlags)
+    if (d->sourceRect == newSourceRect)
         return;
-    d->layerFlags = newLayerFlags;
-    Q_EMIT layerFlagsChanged();
+    d->sourceRect = newSourceRect;
+    d->update();
+    Q_EMIT sourceRectChanged();
+}
+
+void WOutputViewport::resetSourceRect()
+{
+    setSourceRect({});
+}
+
+bool WOutputViewport::disableHardwareLayers() const
+{
+    W_DC(WOutputViewport);
+    return d->disableHardwareLayers;
+}
+
+void WOutputViewport::setDisableHardwareLayers(bool newDisableHardwareLayers)
+{
+    W_D(WOutputViewport);
+    if (d->disableHardwareLayers == newDisableHardwareLayers)
+        return;
+    d->disableHardwareLayers = newDisableHardwareLayers;
+    d->update();
+    Q_EMIT disableHardwareLayersChanged();
+    Q_EMIT hardwareLayersChanged();
+}
+
+bool WOutputViewport::ignoreSoftwareLayers() const
+{
+    W_DC(WOutputViewport);
+    return d->ignoreSoftwareLayers;
+}
+
+void WOutputViewport::setIgnoreSoftwareLayers(bool newIgnoreSoftwareLayers)
+{
+    W_D(WOutputViewport);
+    if (d->ignoreSoftwareLayers == newIgnoreSoftwareLayers)
+        return;
+    d->ignoreSoftwareLayers = newIgnoreSoftwareLayers;
+    d->update();
+    Q_EMIT ignoreSoftwareLayersChanged();
+}
+
+QRectF WOutputViewport::targetRect() const
+{
+    W_DC(WOutputViewport);
+    return d->targetRect;
+}
+
+void WOutputViewport::setTargetRect(const QRectF &newTargetRect)
+{
+    W_D(WOutputViewport);
+    if (d->targetRect == newTargetRect)
+        return;
+    d->targetRect = newTargetRect;
+    d->update();
+    Q_EMIT targetRectChanged();
+}
+
+void WOutputViewport::resetTargetRect()
+{
+    setTargetRect({});
+}
+
+QTransform WOutputViewport::sourceRectToTargetRectTransfrom() const
+{
+    return WBufferRenderer::inputMapToOutput(effectiveSourceRect(),
+                                             targetRect(),
+                                             output()->size(),
+                                             devicePixelRatio());
+}
+
+QMatrix4x4 WOutputViewport::renderMatrix() const
+{
+    QMatrix4x4 renderMatrix;
+
+    if (auto customTransform = viewportTransform()) {
+        customTransform->applyTo(&renderMatrix);
+    } else if (parentItem() && !ignoreViewport() && input() != this) {
+        auto d = QQuickItemPrivate::get(const_cast<WOutputViewport*>(this));
+        auto viewportMatrix = d->itemNode()->matrix().inverted();
+        if (auto inputItem = input()) {
+            QMatrix4x4 matrix = QQuickItemPrivate::get(parentItem())->itemToWindowTransform();
+            matrix *= QQuickItemPrivate::get(inputItem)->windowToItemTransform();
+            renderMatrix = viewportMatrix * matrix.inverted();
+        } else { // the input item is window's contentItem
+            auto pd = QQuickItemPrivate::get(parentItem());
+            QMatrix4x4 parentMatrix = pd->itemToWindowTransform().inverted();
+            renderMatrix = viewportMatrix * parentMatrix;
+        }
+    }
+
+    return renderMatrix;
+}
+
+QMatrix4x4 WOutputViewport::mapToViewport(QQuickItem *item) const
+{
+    if (item == input())
+        return renderMatrix();
+    auto sd = QQuickItemPrivate::get(item);
+    auto matrix = sd->itemToWindowTransform();
+
+    if (auto i = input()) {
+        matrix *= QQuickItemPrivate::get(i)->windowToItemTransform();
+        return renderMatrix() * matrix;
+    } else { // the input item is window's contentItem
+        matrix *= QQuickItemPrivate::get(this)->windowToItemTransform();
+        return matrix;
+    }
+}
+
+QRectF WOutputViewport::mapToOutput(QQuickItem *source, const QRectF &geometry) const
+{
+    return (mapToViewport(source) * sourceRectToTargetRectTransfrom()).mapRect(geometry);
+}
+
+QPointF WOutputViewport::mapToOutput(QQuickItem *source, const QPointF &position) const
+{
+    return (mapToViewport(source) * sourceRectToTargetRectTransfrom()).map(position);
+}
+
+bool WOutputViewport::ignoreViewport() const
+{
+    W_DC(WOutputViewport);
+    return d->ignoreViewport;
+}
+
+void WOutputViewport::setIgnoreViewport(bool newIgnoreViewport)
+{
+    W_D(WOutputViewport);
+    if (d->ignoreViewport == newIgnoreViewport)
+        return;
+    d->ignoreViewport = newIgnoreViewport;
+    Q_EMIT ignoreViewportChanged();
+}
+
+QList<WOutputLayer *> WOutputViewport::layers() const
+{
+    W_DC(WOutputViewport);
+
+    if (!d->attached)
+        return {};
+
+    Q_ASSERT(d->window);
+    return d->outputWindow()->layers(this);
+}
+
+QList<WOutputLayer *> WOutputViewport::hardwareLayers() const
+{
+    W_DC(WOutputViewport);
+
+    if (d->disableHardwareLayers || !d->attached)
+        return {};
+
+    Q_ASSERT(d->window);
+    return d->outputWindow()->hardwareLayers(this);
+}
+
+QList<WOutputViewport *> WOutputViewport::depends() const
+{
+    W_DC(WOutputViewport);
+    return d->depends;
+}
+
+void WOutputViewport::setDepends(const QList<WOutputViewport *> &newDepends)
+{
+    W_D(WOutputViewport);
+    if (d->depends == newDepends)
+        return;
+    d->depends = newDepends;
+    Q_EMIT dependsChanged();
 }
 
 void WOutputViewport::setOutputScale(float scale)
@@ -325,6 +531,12 @@ void WOutputViewport::itemChange(ItemChange change, const ItemChangeData &data)
     if (change == ItemSceneChange && data.window) {
         if (!qobject_cast<WOutputRenderWindow*>(data.window)) {
             qFatal() << "OutputViewport must using in OutputRenderWindow.";
+        }
+        W_D(WOutputViewport);
+
+        if (d->output && isComponentComplete()) {
+            d->outputWindow()->attach(this);
+            d->attached = true;
         }
     }
 }

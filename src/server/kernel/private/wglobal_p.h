@@ -3,12 +3,12 @@
 #pragma once
 
 #include "wglobal.h"
-
+#include <qwobject.h>
 #include <QPointer>
 
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
-class WObjectPrivate
+class Q_DECL_HIDDEN WObjectPrivate
 {
 public:
     static WObjectPrivate *get(WObject *qq);
@@ -34,7 +34,7 @@ protected:
     W_DECLARE_PUBLIC(WObject)
 };
 
-class WWrapObjectPrivate : public WObjectPrivate
+class Q_DECL_HIDDEN WWrapObjectPrivate : public WObjectPrivate
 {
 public:
     WWrapObjectPrivate(WWrapObject *q);
@@ -48,12 +48,12 @@ public:
 protected:
     W_DECLARE_PUBLIC(WWrapObject)
 
-    void initHandle(QW_NAMESPACE::QWWrapObject *handle);
+    void initHandle(QW_NAMESPACE::qw_object_basic *handle);
     void invalidate();
     virtual void instantRelease() {}
 
     QList<QMetaObject::Connection> connectionsWithHandle;
-    QPointer<QW_NAMESPACE::QWWrapObject> m_handle;
+    QPointer<QW_NAMESPACE::qw_object_basic> m_handle;
     uint invalidated:1;
 };
 

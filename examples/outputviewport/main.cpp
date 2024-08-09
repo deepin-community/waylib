@@ -39,11 +39,10 @@ Helper::Helper(QObject *parent)
     , m_server(new WServer(this))
     , m_outputCreator(new WQmlCreator(this))
     , m_outputLayout(new WQuickOutputLayout(this))
-    , m_cursor(new WQuickCursor(this))
+    , m_cursor(new WCursor(this))
 {
     m_seat = m_server->attach<WSeat>();
     m_seat->setCursor(m_cursor);
-    m_cursor->setThemeName(getenv("XCURSOR_THEME"));
     m_cursor->setLayout(m_outputLayout);
 }
 
@@ -61,7 +60,6 @@ void Helper::initProtocols(WOutputRenderWindow *window, QQmlEngine *qmlEngine)
     connect(m_backend, &WBackend::outputAdded, this, [this, window, qmlEngine] (WOutput *output) {
         auto initProperties = qmlEngine->newObject();
         initProperties.setProperty("waylandOutput", qmlEngine->toScriptValue(output));
-        initProperties.setProperty("waylandCursor", qmlEngine->toScriptValue(m_cursor));
         initProperties.setProperty("layout", qmlEngine->toScriptValue(m_outputLayout));
         initProperties.setProperty("x", qmlEngine->toScriptValue(m_outputLayout->implicitWidth()));
 
@@ -80,12 +78,12 @@ void Helper::initProtocols(WOutputRenderWindow *window, QQmlEngine *qmlEngine)
         m_seat->detachInputDevice(device);
     });
 
-    m_allocator = QWAllocator::autoCreate(m_backend->handle(), m_renderer);
-    m_renderer->initWlDisplay(m_server->handle());
+    m_allocator = qw_allocator::autocreate(*m_backend->handle(), *m_renderer);
+    m_renderer->init_wl_display(*m_server->handle());
 
     // free follow display
-    m_compositor = QWCompositor::create(m_server->handle(), m_renderer, 6);
-    QWSubcompositor::create(m_server->handle());
+    m_compositor = qw_compositor::create(*m_server->handle(), 6, *m_renderer);
+    qw_subcompositor::create(*m_server->handle());
 
     connect(window, &WOutputRenderWindow::outputViewportInitialized, this, [] (WOutputViewport *viewport) {
         // Trigger QWOutput::frame signal in order to ensure WOutputHelper::renderable
@@ -104,7 +102,7 @@ void Helper::initProtocols(WOutputRenderWindow *window, QQmlEngine *qmlEngine)
                 qwoutput->setProperty("_Enabled", true);
 
                 if (!qwoutput->handle()->current_mode) {
-                    auto mode = qwoutput->preferredMode();
+                    auto mode = qwoutput->preferred_mode();
                     if (mode)
                         output->setMode(mode);
                 }
@@ -120,7 +118,7 @@ void Helper::initProtocols(WOutputRenderWindow *window, QQmlEngine *qmlEngine)
 }
 
 int main(int argc, char *argv[]) {
-    QWLog::init();
+    qw_log::init();
     WServer::initializeQPA();
 //    QQuickStyle::setStyle("Material");
 

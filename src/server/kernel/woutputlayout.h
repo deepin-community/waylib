@@ -11,7 +11,7 @@ WAYLIB_SERVER_BEGIN_NAMESPACE
 
 class WOutput;
 class WOutputLayoutPrivate;
-class WAYLIB_SERVER_EXPORT WOutputLayout : public QW_NAMESPACE::QWOutputLayout, public WObject
+class WAYLIB_SERVER_EXPORT WOutputLayout : public QW_NAMESPACE::qw_output_layout, public WObject
 {
     Q_OBJECT
     W_DECLARE_PRIVATE(WOutputLayout)
@@ -42,8 +42,9 @@ public:
     int implicitHeight() const;
 
 Q_SIGNALS:
-    void outputAdded(WOutput *output);
-    void outputRemoved(WOutput *output);
+    void outputAdded(WAYLIB_SERVER_NAMESPACE::WOutput *output);
+    void outputRemoved(WAYLIB_SERVER_NAMESPACE::WOutput *output);
+    void outputsChanged();
     void implicitWidthChanged();
     void implicitHeightChanged();
 
@@ -52,10 +53,9 @@ protected:
     ~WOutputLayout() override = default;
 
 protected:
-    using QW_NAMESPACE::QWOutputLayout::add;
-    using QW_NAMESPACE::QWOutputLayout::addAuto;
-    using QW_NAMESPACE::QWOutputLayout::move;
-    using QW_NAMESPACE::QWOutputLayout::remove;
+    using QW_NAMESPACE::qw_output_layout::add;
+    using QW_NAMESPACE::qw_output_layout::add_auto;
+    using QW_NAMESPACE::qw_output_layout::remove;
 };
 
 WAYLIB_SERVER_END_NAMESPACE

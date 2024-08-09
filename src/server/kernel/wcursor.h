@@ -15,11 +15,11 @@ class QWindow;
 QT_END_NAMESPACE
 
 QW_BEGIN_NAMESPACE
-class QWXCursorManager;
-class QWInputDevice;
-class QWCursor;
-class QWOutputCursor;
-class QWSurface;
+class qw_xcursor_manager;
+class qw_input_device;
+class qw_cursor;
+class qw_output_cursor;
+class qw_surface;
 QW_END_NAMESPACE
 
 WAYLIB_SERVER_BEGIN_NAMESPACE
@@ -28,68 +28,24 @@ class WSeat;
 class WInputDevice;
 class WXCursorImage;
 class WCursorPrivate;
-class WCursor : public WWrapObject
+class WAYLIB_SERVER_EXPORT WCursor : public WWrapObject
 {
     Q_OBJECT
     W_DECLARE_PRIVATE(WCursor)
+    Q_PROPERTY(bool visible READ isVisible WRITE setVisible NOTIFY visibleChanged FINAL)
+    Q_PROPERTY(QCursor cursor READ cursor WRITE setCursor NOTIFY cursorChanged FINAL)
+    Q_PROPERTY(QPointF position READ position NOTIFY positionChanged FINAL)
+    Q_PROPERTY(WAYLIB_SERVER_NAMESPACE::WSurface* requestedDragSurface READ requestedDragSurface NOTIFY requestedDragSurfaceChanged FINAL)
+    QML_ANONYMOUS
 
 public:
-    enum CursorShape {
-        Default = Qt::CustomCursor + 1,
-        Invalid,
-        BottomLeftCorner,
-        BottomRightCorner,
-        TopLeftCorner,
-        TopRightCorner,
-        BottomSide,
-        LeftSide,
-        RightSide,
-        TopSide,
-        Grabbing,
-        Xterm,
-        Hand1,
-        Watch,
-        SWResize,
-        SEResize,
-        SResize,
-        WResize,
-        EResize,
-        EWResize,
-        NWResize,
-        NWSEResize,
-        NEResize,
-        NESWResize,
-        NSResize,
-        NResize,
-        AllScroll,
-        Text,
-        Pointer,
-        Wait,
-        ContextMenu,
-        Help,
-        Progress,
-        Cell,
-        Crosshair,
-        VerticalText,
-        Alias,
-        Copy,
-        Move,
-        NoDrop,
-        NotAllowed,
-        Grab,
-        ColResize,
-        RowResize,
-        ZoomIn,
-        ZoomOut
-    };
-    Q_ENUM(CursorShape)
-    static_assert(BottomLeftCorner > Default, "");
+    typedef WGlobal::CursorShape CursorShape;
 
     explicit WCursor(QObject *parent = nullptr);
 
-    QW_NAMESPACE::QWCursor *handle() const;
+    QW_NAMESPACE::qw_cursor *handle() const;
 
-    static WCursor *fromHandle(const QW_NAMESPACE::QWCursor *handle);
+    static WCursor *fromHandle(const QW_NAMESPACE::qw_cursor *handle);
 
     static Qt::MouseButton fromNativeButton(uint32_t code);
     static uint32_t toNativeButton(Qt::MouseButton button);
@@ -104,13 +60,13 @@ public:
 
     static Qt::CursorShape defaultCursor();
 
-    void setXCursorManager(QW_NAMESPACE::QWXCursorManager *manager);
     QCursor cursor() const;
     void setCursor(const QCursor &cursor);
-    void setSurface(QW_NAMESPACE::QWSurface *surface, const QPoint &hotspot);
-    void setCursorShape(CursorShape shape);
-    void setDragSurface(WSurface *surface);
-    WSurface* dragSurface() const;
+
+    // from client
+    CursorShape requestedCursorShape() const;
+    std::pair<WSurface*, QPoint> requestedCursorSurface() const;
+    WSurface* requestedDragSurface() const;
 
     void setLayout(WOutputLayout *layout);
     WOutputLayout *layout() const;
@@ -126,16 +82,22 @@ public:
 
 Q_SIGNALS:
     void positionChanged();
-    void dragSurfaceChanged();
+    void seatChanged();
+    void requestedCursorShapeChanged();
+    void requestedCursorSurfaceChanged();
+    void requestedDragSurfaceChanged();
+    void layoutChanged();
+    void cursorChanged();
+    void visibleChanged();
 
 protected:
     WCursor(WCursorPrivate &dd, QObject *parent = nullptr);
     ~WCursor() override = default;
 
-    virtual void move(QW_NAMESPACE::QWInputDevice *device, const QPointF &delta);
-    virtual void setPosition(QW_NAMESPACE::QWInputDevice *device, const QPointF &pos);
-    virtual bool setPositionWithChecker(QW_NAMESPACE::QWInputDevice *device, const QPointF &pos);
-    virtual void setScalePosition(QW_NAMESPACE::QWInputDevice *device, const QPointF &ratio);
+    virtual void move(QW_NAMESPACE::qw_input_device *device, const QPointF &delta);
+    virtual void setPosition(QW_NAMESPACE::qw_input_device *device, const QPointF &pos);
+    virtual bool setPositionWithChecker(QW_NAMESPACE::qw_input_device *device, const QPointF &pos);
+    virtual void setScalePosition(QW_NAMESPACE::qw_input_device *device, const QPointF &ratio);
 
 private:
     friend class WSeat;
@@ -143,8 +105,6 @@ private:
     void setSeat(WSeat *seat);
     bool attachInputDevice(WInputDevice *device);
     void detachInputDevice(WInputDevice *device);
-
-    W_PRIVATE_SLOT(void updateCursorImage())
 
     W_PRIVATE_SLOT(void on_swipe_begin(wlr_pointer_swipe_begin_event *event))
     W_PRIVATE_SLOT(void on_swipe_update(wlr_pointer_swipe_update_event *event))

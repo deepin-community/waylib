@@ -16,14 +16,8 @@
 
 #include <qwdisplay.h>
 #include <qwxdgoutputv1.h>
+#include <qwoutputlayout.h>
 #include <QQmlInfo>
-
-extern "C" {
-#define static
-#include <wlr/types/wlr_xdg_output_v1.h>
-#undef static
-#include <wlr/types/wlr_output_layout.h>
-}
 
 // Copy from wlroots
 #define OUTPUT_MANAGER_VERSION 3
@@ -31,7 +25,7 @@ extern "C" {
 #define OUTPUT_DESCRIPTION_MUTABLE_SINCE_VERSION 3
 #define UNUSED(x) (void)(x)
 
-struct way_xdg_output_manager_v1 {
+struct Q_DECL_HIDDEN way_xdg_output_manager_v1 {
     struct wl_global *global;
     struct wlr_output_layout *layout;
 
@@ -49,7 +43,7 @@ struct way_xdg_output_manager_v1 {
     float scale_override;
 };
 
-struct way_xdg_output_v1 {
+struct Q_DECL_HIDDEN way_xdg_output_v1 {
     struct way_xdg_output_manager_v1 *manager;
     struct wl_list resources;
     struct wl_list link;
@@ -357,9 +351,9 @@ static struct way_xdg_output_manager_v1 *way_xdg_output_manager_v1_create(
 
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
-using QW_NAMESPACE::QWXdgOutputManagerV1;
+using QW_NAMESPACE::qw_xdg_output_manager_v1;
 
-class WXdgOutputManagerPrivate : public WObjectPrivate
+class Q_DECL_HIDDEN WXdgOutputManagerPrivate : public WObjectPrivate
 {
 public:
     WXdgOutputManagerPrivate(WXdgOutputManager *qq)

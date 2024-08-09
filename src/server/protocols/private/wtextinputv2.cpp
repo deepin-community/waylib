@@ -15,10 +15,6 @@
 
 extern "C" {
 #include "text-input-unstable-v2-protocol.h"
-#define static
-#include <wlr/types/wlr_compositor.h>
-#undef static
-#include <wlr/types/wlr_seat.h>
 }
 QW_USE_NAMESPACE
 WAYLIB_SERVER_BEGIN_NAMESPACE
@@ -40,7 +36,7 @@ static struct zwp_text_input_v2_interface text_input_impl = {
     .set_preferred_language = handle_text_input_set_preferred_language,
     .update_state = handle_text_input_update_state
 };
-class WTextInputV2Private : public WTextInputPrivate
+class Q_DECL_HIDDEN WTextInputV2Private : public WTextInputPrivate
 {
 public:
     W_DECLARE_PUBLIC(WTextInputV2)
@@ -89,7 +85,7 @@ public:
     }
 };
 
-class WTextInputManagerV2Private : public WObjectPrivate
+class Q_DECL_HIDDEN WTextInputManagerV2Private : public WObjectPrivate
 {
 public:
     W_DECLARE_PUBLIC(WTextInputManagerV2)
@@ -182,7 +178,7 @@ void handle_manager_get_text_input(wl_client *client,
     }
     text_input->d_func()->resource = text_input_resource;
     auto wClient = WClient::get(client);
-    auto wSeat = WSeat::fromHandle(QWSeat::from(seat_client->seat));
+    auto wSeat = WSeat::fromHandle(qw_seat::from(seat_client->seat));
     Q_ASSERT(wClient);
     Q_ASSERT(wSeat);
     text_input->d_func()->client = wClient;
@@ -224,7 +220,7 @@ void handle_text_input_enable(wl_client *client, wl_resource *resource, wl_resou
         d->enabledSurface->safeDisconnect(text_input);
     }
     d->enabledSurface = wSurface;
-    wSurface->safeConnect(&QWSurface::beforeDestroy, text_input, [d, text_input]{
+    wSurface->safeConnect(&qw_surface::before_destroy, text_input, [d, text_input]{
         Q_EMIT text_input->disableOnSurface(d->enabledSurface);
         d->enabledSurface->safeDisconnect(text_input);
         d->enabledSurface = nullptr;

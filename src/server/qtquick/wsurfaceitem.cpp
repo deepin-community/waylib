@@ -15,50 +15,46 @@
 #include <qwsubcompositor.h>
 #include <qwtexture.h>
 #include <qwbuffer.h>
+#include <qwrenderer.h>
+#include <qwbox.h>
 
 #include <QQuickWindow>
 #include <QSGImageNode>
 #include <QSGRenderNode>
 #include <private/qquickitem_p.h>
 
-extern "C" {
-#define static
-#include <wlr/types/wlr_compositor.h>
-#include <wlr/types/wlr_subcompositor.h>
-#undef static
-}
-
 QW_USE_NAMESPACE
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
-class WSGTextureProvider : public WBufferTextureProvider
+class Q_DECL_HIDDEN WSGTextureProvider : public WBufferTextureProvider
 {
     friend class WSurfaceItemContent;
+    friend class WSurfaceItemContentPrivate;
 public:
     WSGTextureProvider(WSurfaceItemContent *item);
     ~WSGTextureProvider();
 
 public:
     QSGTexture *texture() const override;
-    QWTexture *qwTexture() const override;
-    QWBuffer *qwBuffer() const override;
+    qw_texture *qwTexture() const override;
+    qw_buffer *qwBuffer() const override;
     void updateTexture(); // in render thread
     void tryUpdateTexture();
     void maybeUpdateTextureOnSurfacePrrimaryOutputChanged();
     void reset();
 
-    QWTexture *ensureTexture();
+    qw_texture *ensureTexture();
 
 private:
     void doUpdateTexture();
     WSurfaceItemContent *item;
-    QWBuffer *buffer = nullptr;
-    std::unique_ptr<QWTexture> qwtexture;
+    std::unique_ptr<qw_buffer, qw_buffer::unlocker> buffer;
+    std::unique_ptr<qw_texture> qwtexture;
     std::unique_ptr<WTexture> dwtexture;
     bool textureDirty = false;
 };
 
-class EventItem : public QQuickItem
+class Q_DECL_HIDDEN EventItem : public QQuickItem
 {
     Q_OBJECT
 public:
@@ -68,6 +64,7 @@ public:
         setAcceptTouchEvents(true);
         setAcceptedMouseButtons(Qt::AllButtons);
         setFlag(QQuickItem::ItemClipsChildrenToShape, true);
+        setCursor(WCursor::toQCursor(WGlobal::CursorShape::ClientResource));
     }
 
     inline bool isValid() const {
@@ -133,40 +130,31 @@ private:
     }
 };
 
-class WSurfaceItemContentPrivate: public QQuickItemPrivate
+class Q_DECL_HIDDEN WSurfaceItemContentPrivate: public QQuickItemPrivate
 {
 public:
     WSurfaceItemContentPrivate(WSurfaceItemContent *qq){}
 
     ~WSurfaceItemContentPrivate() {
-        if (updateTextureConnection) {
-            Q_ASSERT(surface);
-            surface->safeDisconnect(updateTextureConnection);
-        }
-
-        if (frameDoneConnection)
-            QObject::disconnect(frameDoneConnection);
-
-        if (textureProvider) {
-            delete textureProvider;
-            textureProvider = nullptr;
-        }
     }
 
     inline WSGTextureProvider *tp() const {
         if (!textureProvider) {
-            Q_ASSERT(surface);
             textureProvider = new WSGTextureProvider(const_cast<WSurfaceItemContent*>(q_func()));
-            updateTextureConnection = surface->safeConnect(&WSurface::bufferChanged,
-                                                           textureProvider,
-                                                           &WSGTextureProvider::updateTexture);
+            Q_ASSERT(!updateTextureConnection);
+            if (surface) {
+                updateTextureConnection = surface->safeConnect(&WSurface::bufferChanged,
+                                                               textureProvider,
+                                                               &WSGTextureProvider::updateTexture);
+            }
         }
         return textureProvider;
     }
+    void cleanTextureProvider();
 
     void invalidate() {
+        W_Q(WSurfaceItemContent);
         if (surface) {
-            W_Q(WSurfaceItemContent);
             surface->safeDisconnect(q);
             if (textureProvider) {
                 surface->safeDisconnect(textureProvider);
@@ -179,14 +167,16 @@ public:
 
         Q_ASSERT(!updateTextureConnection);
 
-        if (dontCacheLastBuffer && textureProvider)
-            textureProvider->reset();
+        if (dontCacheLastBuffer) {
+            cleanTextureProvider();
+            q->update();
+        }
     }
 
     void init() {
         W_Q(WSurfaceItemContent);
 
-        surface->safeConnect(&QWSurface::commit, q, [this] {
+        surface->safeConnect(&qw_surface::notify_commit, q, [this] {
             updateSurfaceState();
         });
         surface->safeConnect(&WSurface::primaryOutputChanged, q, [this] {
@@ -203,7 +193,10 @@ public:
 
         updateFrameDoneConnection();
         updateSurfaceState();
-        tp()->updateTexture();
+        // window maybe never set before WSurfaceItemContentPrivate::init
+        // also need try updateTexture when `ItemSceneChange`
+        if (window)
+            tp()->updateTexture();
         q->rendered = true;
     }
 
@@ -217,7 +210,7 @@ public:
 
         // wayland protocol job should not run in rendering thread, so set context qobject to contentItem
         frameDoneConnection = QObject::connect(q->window(), &QQuickWindow::afterRendering, q, [this, q](){
-            if (q->rendered && live) {
+            if ((q->rendered || q->isVisible()) && live && surface) {
                 surface->notifyFrameDone();
                 q->rendered = false;
             }
@@ -228,8 +221,20 @@ public:
         if (!surface)
             return;
 
-        bufferSourceBox = surface->handle()->getBufferSourceBox();
-        bufferOffset = surface->bufferOffset();
+        qw_fbox tmp;
+        surface->handle()->get_buffer_source_box(tmp);
+        bufferSourceBox = tmp.toQRectF();
+
+        W_Q(WSurfaceItemContent);
+
+        const auto bOffset = surface->bufferOffset();
+        if (bOffset != bufferOffset) {
+            bufferOffset = surface->bufferOffset();
+            Q_EMIT q->bufferOffsetChanged();
+        }
+
+        const auto s = surface->size();
+        q->setImplicitSize(s.width(), s.height());
     }
 
     W_DECLARE_PUBLIC(WSurfaceItemContent)
@@ -242,6 +247,7 @@ public:
     mutable QMetaObject::Connection updateTextureConnection;
     bool dontCacheLastBuffer = false;
     bool live = true;
+    bool ignoreBufferOffset = false;
 };
 
 
@@ -249,6 +255,22 @@ WSurfaceItemContent::WSurfaceItemContent(QQuickItem *parent)
     : QQuickItem(*new WSurfaceItemContentPrivate(this), parent)
 {
     setFlag(QQuickItem::ItemHasContents, true);
+}
+
+WSurfaceItemContent::~WSurfaceItemContent()
+{
+    W_D(WSurfaceItemContent);
+    if (d->updateTextureConnection) {
+        Q_ASSERT(d->surface);
+        d->surface->safeDisconnect(d->updateTextureConnection);
+    }
+
+    if (d->frameDoneConnection)
+        QObject::disconnect(d->frameDoneConnection);
+
+    //`d->window` will become nullptr in ~QQuickItem
+    // Don't move this to private class
+    d->cleanTextureProvider();
 }
 
 WSurface *WSurfaceItemContent::surface() const
@@ -278,8 +300,12 @@ void WSurfaceItemContent::setSurface(WSurface *surface)
             d->init();
     }
 
-    if (!d->surface)
+    if (!d->surface) {
         d->invalidate();
+    } else {
+        const auto s = surface->size();
+        setImplicitSize(s.width(), s.height());
+    }
 
     Q_EMIT surfaceChanged();
 }
@@ -336,6 +362,27 @@ void WSurfaceItemContent::setLive(bool live)
     Q_EMIT liveChanged();
 }
 
+QPoint WSurfaceItemContent::bufferOffset() const
+{
+    W_DC(WSurfaceItemContent);
+    return d->bufferOffset;
+}
+
+bool WSurfaceItemContent::ignoreBufferOffset() const
+{
+    W_DC(WSurfaceItemContent);
+    return d->ignoreBufferOffset;
+}
+
+void WSurfaceItemContent::setIgnoreBufferOffset(bool newIgnoreBufferOffset)
+{
+    W_D(WSurfaceItemContent);
+    if (d->ignoreBufferOffset == newIgnoreBufferOffset)
+        return;
+    d->ignoreBufferOffset = newIgnoreBufferOffset;
+    Q_EMIT ignoreBufferOffsetChanged();
+}
+
 void WSurfaceItemContent::componentComplete()
 {
     QQuickItem::componentComplete();
@@ -345,7 +392,7 @@ void WSurfaceItemContent::componentComplete()
         d->init();
 }
 
-class WSGRenderFootprintNode: public QSGRenderNode
+class Q_DECL_HIDDEN WSGRenderFootprintNode: public QSGRenderNode
 {
 public:
     WSGRenderFootprintNode(WSurfaceItemContent *owner)
@@ -368,7 +415,6 @@ public:
 
 QSGNode *WSurfaceItemContent::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 {
-    auto privt = QQuickItemPrivate::get(this);
     W_D(WSurfaceItemContent);
     if (!d->textureProvider || !d->textureProvider->texture() || width() <= 0 || height() <= 0) {
         delete oldNode;
@@ -389,7 +435,7 @@ QSGNode *WSurfaceItemContent::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeD
 
     const QRectF textureGeometry = d->bufferSourceBox;
     node->setSourceRect(textureGeometry);
-    const QRectF targetGeometry(d->bufferOffset, size());
+    const QRectF targetGeometry(d->ignoreBufferOffset ? QPointF() : d->bufferOffset, size());
     node->setRect(targetGeometry);
     node->setFiltering(smooth() ? QSGTexture::Linear : QSGTexture::Nearest);
 
@@ -400,24 +446,7 @@ void WSurfaceItemContent::releaseResources()
 {
     W_D(WSurfaceItemContent);
 
-    if (d->textureProvider) {
-        class WSurfaceItemContentCleanupJob : public QRunnable
-        {
-        public:
-            WSurfaceItemContentCleanupJob(QObject *object) : m_object(object) { }
-            void run() override {
-                delete m_object;
-            }
-            QObject *m_object;
-        };
-
-        // Delay clean the textures on the next render after.
-        window()->scheduleRenderJob(new WSurfaceItemContentCleanupJob(d->textureProvider),
-                                    QQuickWindow::AfterRenderingStage);
-        d->textureProvider->item = nullptr;
-        d->textureProvider = nullptr;
-    }
-
+    d->cleanTextureProvider();
     d->invalidate();
 
     // Force to update the contents, avoid to render the invalid textures
@@ -430,6 +459,9 @@ void WSurfaceItemContent::itemChange(ItemChange change, const ItemChangeData &da
     W_D(WSurfaceItemContent);
     if (change == QQuickItem::ItemSceneChange) {
         d->updateFrameDoneConnection();
+        if (data.window && d->surface) {
+            d->tp()->updateTexture();
+        }
     }
 }
 
@@ -450,9 +482,7 @@ WSGTextureProvider::WSGTextureProvider(WSurfaceItemContent *item)
 
 WSGTextureProvider::~WSGTextureProvider()
 {
-    if (buffer)
-        buffer->unlock();
-    buffer = nullptr;
+
 }
 
 QSGTexture *WSGTextureProvider::texture() const
@@ -463,16 +493,16 @@ QSGTexture *WSGTextureProvider::texture() const
     return dwtexture->getSGTexture(item->window());
 }
 
-QWTexture *WSGTextureProvider::qwTexture() const
+qw_texture *WSGTextureProvider::qwTexture() const
 {
     if (!buffer)
         return nullptr;
     return qwtexture.get();
 }
 
-QWBuffer *WSGTextureProvider::qwBuffer() const
+qw_buffer *WSGTextureProvider::qwBuffer() const
 {
-    return buffer;
+    return buffer.get();
 }
 
 void WSGTextureProvider::updateTexture()
@@ -489,9 +519,7 @@ void WSGTextureProvider::doUpdateTexture()
     if (qwtexture)
         qwtexture.reset();
 
-    if (buffer)
-        buffer->unlock();
-    buffer = item->d_func()->surface->buffer();
+    buffer.reset(item->d_func()->surface->buffer());
     // lock buffer to ensure the WSurfaceItem can keep the last frame after WSurface destroyed.
     if (buffer)
         buffer->lock();
@@ -534,11 +562,11 @@ void WSGTextureProvider::reset()
     item->update();
 }
 
-QWTexture *WSGTextureProvider::ensureTexture()
+qw_texture *WSGTextureProvider::ensureTexture()
 {
-    auto textureHandle = item->d_func()->surface->handle()->getTexture();
+    auto textureHandle = item->d_func()->surface->handle()->get_texture();
     if (textureHandle)
-        return textureHandle;
+        return qw_texture::from(textureHandle);
 
     if (qwtexture)
         return qwtexture.get();
@@ -554,7 +582,7 @@ QWTexture *WSGTextureProvider::ensureTexture()
     if (!renderer)
         return nullptr;
 
-    qwtexture.reset(QWTexture::fromBuffer(renderer, buffer));
+    qwtexture.reset(qw_texture::from_buffer(*renderer, *buffer));
     return qwtexture.get();
 }
 
@@ -751,7 +779,9 @@ void WSurfaceItem::setDelegate(QQmlComponent *newDelegate)
     if (d->delegate == newDelegate)
         return;
     d->delegate = newDelegate;
-    d->initForDelegate();
+    d->delegateIsDirty = true;
+    if (d->componentComplete)
+        d->initForDelegate();
 
     for (auto sub : std::as_const(d->subsurfaces))
         sub->setDelegate(newDelegate);
@@ -1067,7 +1097,7 @@ void WSurfaceItemPrivate::initForSurface()
     QObject::connect(surface, &WWrapObject::aboutToBeInvalidated, q,
                      &WSurfaceItem::releaseResources, Qt::DirectConnection);
     surface->safeConnect(&WSurface::hasSubsurfaceChanged, q, [this]{ onHasSubsurfaceChanged(); });
-    surface->safeConnect(&QWSurface::commit, q, &WSurfaceItem::onSurfaceCommit);
+    surface->safeConnect(&qw_surface::notify_commit, q, &WSurfaceItem::onSurfaceCommit);
 
     onHasSubsurfaceChanged();
     updateEventItem(false);
@@ -1078,26 +1108,23 @@ void WSurfaceItemPrivate::initForDelegate()
 {
     Q_Q(WSurfaceItem);
 
-    QQuickItem *newContentContainer = nullptr;
+    std::unique_ptr<QQuickItem> newContentContainer;
 
     if (!delegate) {
-        if (getItemContent())
+        if (getItemContent()) {
+            Q_ASSERT(!delegateIsDirty);
             return;
+        }
 
+        delegateIsDirty = false;
         auto contentItem = new WSurfaceItemContent(q);
         if (surface)
             contentItem->setSurface(surface);
         contentItem->setCacheLastBuffer(!surfaceFlags.testFlag(WSurfaceItem::DontCacheLastBuffer));
         contentItem->setSmooth(q->smooth());
         QObject::connect(q, &WSurfaceItem::smoothChanged, contentItem, &WSurfaceItemContent::setSmooth);
-        newContentContainer = contentItem;
-    } else {
-        if (!contentContainer || getItemContent()) {
-            newContentContainer = new QQuickItem(q);
-        } else {
-            newContentContainer = contentContainer;
-        }
-
+        newContentContainer.reset(contentItem);
+    } else if (delegateIsDirty) {
         auto obj = delegate->createWithInitialProperties({{"surface", QVariant::fromValue(q)}}, qmlContext(q));
         if (!obj) {
             qWarning() << "Failed on create surface item from delegate, error mssage:"
@@ -1105,15 +1132,18 @@ void WSurfaceItemPrivate::initForDelegate()
             return;
         }
 
+        delegateIsDirty = false;
         auto contentItem = qobject_cast<QQuickItem*>(obj);
         if (!contentItem)
             qFatal() << "SurfaceItem's delegate must is Item";
 
+        newContentContainer.reset(new QQuickItem(q));
         QQmlEngine::setObjectOwnership(contentItem, QQmlEngine::CppOwnership);
-        contentItem->setParentItem(newContentContainer);
+        contentItem->setParent(newContentContainer.get());
+        contentItem->setParentItem(newContentContainer.get());
     }
 
-    if (newContentContainer == contentContainer)
+    if (!newContentContainer)
         return;
 
     newContentContainer->setZ(qreal(WSurfaceItem::ZOrder::ContentItem));
@@ -1127,7 +1157,7 @@ void WSurfaceItemPrivate::initForDelegate()
         contentContainer->disconnect(q);
         contentContainer->deleteLater();
     }
-    contentContainer = newContentContainer;
+    contentContainer = newContentContainer.release();
     updateEventItem(false);
     if (eventItem)
         updateEventItemGeometry();
@@ -1137,8 +1167,8 @@ void WSurfaceItemPrivate::initForDelegate()
 
 void WSurfaceItemPrivate::onHasSubsurfaceChanged()
 {
-    auto qwsurface = surface->handle();
-    Q_ASSERT(qwsurface);
+    auto qw_surface = surface->handle();
+    Q_ASSERT(qw_surface);
     if (surface->hasSubsurface())
         updateSubsurfaceItem();
 }
@@ -1263,18 +1293,16 @@ void WSurfaceItemPrivate::resizeSurfaceToItemSize(const QSize &itemSize, const Q
 
 void WSurfaceItemPrivate::updateEventItem(bool forceDestroy)
 {
-    auto contentItem = getItemContent();
-    const bool needsEventItem = contentItem && !forceDestroy
+    const bool needsEventItem = contentContainer && !forceDestroy
                                 && !surfaceFlags.testFlag(WSurfaceItem::RejectEvent);
     if (bool(eventItem) == needsEventItem)
         return;
 
     if (auto eventItemTmp = eventItem) {
-        // set evItem's parentItem to null will invoke clearFocusInScope then focusIn surfaceItem
-        // first clear eventItem to avoid forceActiveFocus on eventItem again
+        // maybe trigger QQuickDeliveryAgentPrivate::clearFocusInScope in later,
+        // first clear eventItem=nullptr to avoid forceActiveFocus on eventItem again.
         this->eventItem = nullptr;
         eventItemTmp->setVisible(false);
-        eventItemTmp->setParentItem(nullptr);
         eventItemTmp->setParent(nullptr);
         eventItemTmp->deleteLater();
     } else {
@@ -1353,6 +1381,35 @@ bool WSurfaceItem::setShellSurface(WToplevelSurface *surface)
     setSurface(surface ? surface->surface() : nullptr);
     Q_EMIT this->shellSurfaceChanged();
     return true;
+}
+
+void WSurfaceItemContentPrivate::cleanTextureProvider()
+{
+    if (textureProvider) {
+        // needs check window, because maybe this item's window always is nullptr,
+        // so not call WSurfaceItemContent::releaseResources before destroy.
+        if (window) {
+            class Q_DECL_HIDDEN WSurfaceItemContentCleanupJob : public QRunnable
+            {
+            public:
+                WSurfaceItemContentCleanupJob(QObject *object) : m_object(object) { }
+                void run() override {
+                    delete m_object;
+                }
+                QObject *m_object;
+            };
+
+                   // Delay clean the textures on the next render after.
+            window->scheduleRenderJob(new WSurfaceItemContentCleanupJob(textureProvider),
+                                      QQuickWindow::AfterRenderingStage);
+        } else {
+            delete textureProvider;
+        }
+
+        QObject::disconnect(updateTextureConnection);
+        textureProvider->item = nullptr;
+        textureProvider = nullptr;
+    }
 }
 
 WAYLIB_SERVER_END_NAMESPACE

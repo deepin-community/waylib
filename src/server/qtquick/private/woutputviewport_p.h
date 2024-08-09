@@ -14,24 +14,22 @@
 #include <QQuickTextureFactory>
 #include <private/qquickitem_p.h>
 
-extern "C" {
-#define static
-#include <wlr/types/wlr_output.h>
-#undef static
-}
-
 QW_USE_NAMESPACE
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
 class OutputTextureProvider;
-class WOutputViewportPrivate : public QQuickItemPrivate
+class Q_DECL_HIDDEN WOutputViewportPrivate : public QQuickItemPrivate
 {
 public:
     WOutputViewportPrivate()
-        : offscreen(false)
+        : attached(false)
+        , offscreen(false)
         , preserveColorContents(false)
         , live(true)
         , forceRender(false)
+        , ignoreViewport(false)
+        , disableHardwareLayers(false)
+        , ignoreSoftwareLayers(false)
     {
 
     }
@@ -53,7 +51,17 @@ public:
 
     void init();
     void initForOutput();
-    void invalidateSceneGraph();
+    void update();
+
+    // call in WOutputRenderWindow
+    inline void notifyLayersChanged() {
+        Q_EMIT q_func()->layersChanged();
+    }
+    inline void notifyHardwareLayersChanged() {
+        if (disableHardwareLayers)
+            return;
+        Q_EMIT q_func()->hardwareLayersChanged();
+    }
 
     qreal getImplicitWidth() const override;
     qreal getImplicitHeight() const override;
@@ -63,17 +71,26 @@ public:
     void setExtraRenderSource(QQuickItem *source);
 
     W_DECLARE_PUBLIC(WOutputViewport)
+    QList<WOutputViewport*> depends;
+
     QQuickItem *input = nullptr;
     WOutput *output = nullptr;
+    QQuickTransform *viewportTransform = nullptr;
+
     qreal devicePixelRatio = 1.0;
     WBufferRenderer *bufferRenderer = nullptr;
     QPointer<QQuickItem> extraRenderSource;
+    QRectF sourceRect;
+    QRectF targetRect;
 
+    uint attached:1;
     uint offscreen:1;
     uint preserveColorContents:1;
     uint live:1;
     uint forceRender:1;
-    WOutputViewport::LayerFlags layerFlags;
+    uint ignoreViewport:1;
+    uint disableHardwareLayers:1;
+    uint ignoreSoftwareLayers:1;
 };
 
 WAYLIB_SERVER_END_NAMESPACE

@@ -12,8 +12,8 @@
 #include <QPointer>
 
 QW_BEGIN_NAMESPACE
-class QWPointer;
-class QWSurface;
+class qw_pointer;
+class qw_surface;
 QW_END_NAMESPACE
 
 struct wlr_pointer_motion_event;
@@ -36,19 +36,16 @@ struct wlr_touch_cancel_event;
 
 WAYLIB_SERVER_BEGIN_NAMESPACE
 
-class WCursorPrivate : public WWrapObjectPrivate
+class Q_DECL_HIDDEN WCursorPrivate : public WWrapObjectPrivate
 {
 public:
     WCursorPrivate(WCursor *qq);
     ~WCursorPrivate();
 
-    WWRAP_HANDLE_FUNCTIONS(QW_NAMESPACE::QWCursor, wlr_cursor)
+    WWRAP_HANDLE_FUNCTIONS(QW_NAMESPACE::qw_cursor, wlr_cursor)
 
     void instantRelease() override;
 
-    const char *checkTypeAndFallback(const char *name);
-    void setType(const char *name);
-    void updateCursorImage();
     void sendEnterEvent();
     void sendLeaveEvent();
 
@@ -74,18 +71,18 @@ public:
     // end slot function
 
     void connect();
-    void processCursorMotion(QW_NAMESPACE::QWPointer *device, uint32_t time);
+    void processCursorMotion(QW_NAMESPACE::qw_pointer *device, uint32_t time);
 
     W_DECLARE_PUBLIC(WCursor)
 
-    QW_NAMESPACE::QWXCursorManager *xcursor_manager = nullptr;
+    QW_NAMESPACE::qw_xcursor_manager *xcursor_manager = nullptr;
     QCursor cursor;
 
     WSeat *seat = nullptr;
     QPointer<QWindow> eventWindow;
     bool enterWindowEventHasSend = false;
     bool leaveWindowEventHasSend = false;
-    WOutputLayout *outputLayout = nullptr;
+    QPointer<WOutputLayout> outputLayout;
     QList<WInputDevice*> deviceList;
 
     // for event data
@@ -93,11 +90,6 @@ public:
     Qt::MouseButton button = Qt::NoButton;
     QPointF lastPressedOrTouchDownPosition;
     bool visible = true;
-    QPointer<QW_NAMESPACE::QWSurface> surfaceOfCursor;
-    QPoint surfaceCursorHotspot;
-    WCursor::CursorShape shape = WCursor::Invalid;
-    // for drag
-    WSurface* dragSurface = nullptr;
 };
 
 WAYLIB_SERVER_END_NAMESPACE
