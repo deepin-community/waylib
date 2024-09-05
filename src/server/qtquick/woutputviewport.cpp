@@ -4,7 +4,7 @@
 #include "woutputviewport.h"
 #include "woutputviewport_p.h"
 #include "woutput.h"
-#include "wbuffertextureprovider.h"
+#include "wsgtextureprovider.h"
 #include "wbufferrenderer_p.h"
 
 #include <qwbuffer.h>
@@ -59,19 +59,20 @@ void WOutputViewportPrivate::update()
         window->update(q_func());
 }
 
-qreal WOutputViewportPrivate::getImplicitWidth() const
+qreal WOutputViewportPrivate::calculateImplicitWidth() const
 {
     return output->size().width() / devicePixelRatio;
 }
 
-qreal WOutputViewportPrivate::getImplicitHeight() const
+qreal WOutputViewportPrivate::calculateImplicitHeight() const
 {
     return output->size().height() / devicePixelRatio;
 }
 
 void WOutputViewportPrivate::updateImplicitSize()
 {
-    q_func()->setImplicitSize(getImplicitWidth(), getImplicitHeight());
+    q_func()->setImplicitSize(calculateImplicitWidth(),
+                              calculateImplicitHeight());
 }
 
 void WOutputViewportPrivate::updateRenderBufferSource()
@@ -141,10 +142,10 @@ QSGTextureProvider *WOutputViewport::textureProvider() const
     return d->bufferRenderer->textureProvider();
 }
 
-WBufferTextureProvider *WOutputViewport::wTextureProvider() const
+WSGTextureProvider *WOutputViewport::wTextureProvider() const
 {
     W_DC(WOutputViewport);
-    return qobject_cast<WBufferTextureProvider*>(d->bufferRenderer->textureProvider());
+    return qobject_cast<WSGTextureProvider*>(d->bufferRenderer->textureProvider());
 }
 
 QQuickItem *WOutputViewport::input() const
