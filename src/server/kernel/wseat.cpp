@@ -715,9 +715,12 @@ WGlobal::CursorShape WSeat::requestedCursorShape() const
 {
     W_DC(WSeat);
 
-    if (d->cursorClient == d->nativeHandle()->pointer_state.focused_client)
-        return d->cursorShape;
-    return WGlobal::CursorShape::Invalid;
+    if (d->cursorClient != d->nativeHandle()->pointer_state.focused_client) {
+        qCritical("Focused client never set cursor shape nor surface, will fallback to `Default`");
+        return WGlobal::CursorShape::Default;
+    }
+
+    return d->cursorShape;
 }
 
 WSurface *WSeat::requestedCursorSurface() const
@@ -849,7 +852,7 @@ bool WSeat::sendEvent(WSurface *target, QObject *shellObject, QObject *eventObje
             d->doNotifyAxis(static_cast<wlr_axis_source>(we->wlrSource()),
                         orientation,
                         we->wlrDelta(),
-                        we->angleDelta().x()+we->angleDelta().y(), // one of them must be 0
+                        -(we->angleDelta().x()+we->angleDelta().y()), // one of them must be 0, restore to wayland direction here.
                         we->timestamp());
         } else {
             qWarning("An Wheel event was received that was not sent by wlroot and will be ignored");
@@ -1080,9 +1083,17 @@ void WSeat::notifyAxis(WCursor *cursor, WInputDevice *device, wlr_axis_source_t 
     const QPointF &global = cursor->position();
     const QPointF local = w ? global - QPointF(w->position()) : QPointF();
 
-    QPoint angleDelta = orientation == Qt::Horizontal ? QPoint(delta_discrete, 0) : QPoint(0, delta_discrete);
-    WSeatWheelEvent e(source, delta, local, global, QPoint(), angleDelta, Qt::NoButton, d->keyModifiers,
-                  Qt::NoScrollPhase, false, Qt::MouseEventNotSynthesized, qwDevice);
+    QPoint angleDelta, pixelDelta;
+    if (Qt::Horizontal == orientation) {
+        angleDelta = QPoint(-delta, 0);
+        pixelDelta = QPoint(-delta_discrete, 0);
+    } else {
+        angleDelta = QPoint(0, -delta);
+        pixelDelta = QPoint(0, -delta_discrete);
+    }
+
+    WSeatWheelEvent e(source, delta, local, global, pixelDelta, angleDelta, Qt::NoButton, d->keyModifiers,
+                      Qt::NoScrollPhase, false, Qt::MouseEventNotSynthesized, qwDevice);
     e.setTimestamp(timestamp);
 
     if (w) {
